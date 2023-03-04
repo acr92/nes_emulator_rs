@@ -1,93 +1,6 @@
-use bitflags::bitflags;
 use crate::opcodes;
 use crate::opcodes::{AddressingMode, Instruction};
-
-bitflags! {
-    /// # Status Register (P) http://wiki.nesdev.com/w/index.php/Status_flags
-    ///
-    ///  7 6 5 4 3 2 1 0
-    ///  N V _ B D I Z C
-    ///  | |   | | | | +--- Carry Flag
-    ///  | |   | | | +----- Zero Flag
-    ///  | |   | | +------- Interrupt Disable
-    ///  | |   | +--------- Decimal Mode (not used on NES)
-    ///  | |   +----------- Break Command
-    ///  | +--------------- Overflow Flag
-    ///  +----------------- Negative Flag
-    ///
-    pub struct CpuFlags: u8 {
-        const CARRY             = 0b00000001;
-        const ZERO              = 0b00000010;
-        const INTERRUPT_DISABLE = 0b00000100;
-        const DECIMAL_MODE      = 0b00001000;
-        const BREAK             = 0b00010000;
-        const BREAK2            = 0b00100000;
-        const OVERFLOW          = 0b01000000;
-        const NEGATIVE          = 0b10000000;
-    }
-}
-
-pub enum RegisterField {
-    A,
-    X,
-    Y,
-    SP
-}
-
-const STACK: u16 = 0x0100;
-const STACK_RESET: u8 = 0xFD;
-
-pub struct Register {
-    pub a: u8,
-    pub x: u8,
-    pub y: u8,
-    pub pc: u16,
-    pub sp: u8,
-    pub status: CpuFlags,
-}
-
-impl Register {
-    fn read(&self, field: &RegisterField) -> u8 {
-        match field {
-            RegisterField::A => self.a,
-            RegisterField::X => self.x,
-            RegisterField::Y => self.y,
-            RegisterField::SP => self.sp,
-        }
-    }
-
-    fn write(&mut self, field: &RegisterField, value: u8) {
-        match field {
-            RegisterField::A => { self.a = value }
-            RegisterField::X => { self.x = value }
-            RegisterField::Y => { self.y = value }
-            RegisterField::SP => { self.sp = value }
-        }
-
-        match field {
-            RegisterField::SP => {}
-            _ => {
-                self.update_zero_and_negative_flags(value)
-            }
-        }
-    }
-
-    fn update_zero_and_negative_flags(&mut self, result: u8) {
-        // set Zero Flag if A = 0
-        if result == 0 {
-            self.status.insert(CpuFlags::ZERO);
-        } else {
-            self.status.remove(CpuFlags::ZERO);
-        }
-
-        // set Negative flag if bit 7 of A is set
-        if result & 0b1000_0000 != 0 {
-            self.status.insert(CpuFlags::NEGATIVE);
-        } else {
-            self.status.remove(CpuFlags::NEGATIVE);
-        }
-    }
-}
+use crate::register::{CpuFlags, Register, RegisterField};
 
 pub struct CPU {
     pub register: Register,
@@ -126,28 +39,13 @@ impl Mem for CPU {
 impl CPU {
     pub fn new() -> Self {
         CPU {
-            register: Register {
-                a: 0,
-                x: 0,
-                y: 0,
-                pc: 0,
-                sp: STACK_RESET,
-                status: CpuFlags::from_bits_truncate(0b100100),
-            },
+            register: Register::new(),
             memory: [0; 0xFFFF],
         }
     }
 
     pub fn reset(&mut self) {
-        self.register = Register {
-            a: 0,
-            x: 0,
-            y: 0,
-            pc: 0,
-            sp: STACK_RESET,
-            status: CpuFlags::from_bits_truncate(0b100100),
-        };
-
+        self.register = Register::new();
         self.register.pc = self.mem_read_u16(0xFFFC);
     }
 
@@ -173,7 +71,7 @@ impl CPU {
 
             match opcode.instruction {
                 Instruction::BRK => { return; }
-                Instruction::NOP => { }
+                Instruction::NOP => {}
 
 
                 Instruction::DEX => { self.decrement(RegisterField::X) }
@@ -236,6 +134,11 @@ impl CPU {
         self.mem_write(addr, self.register.read(&source))
     }
 
+    fn and(&self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+    }
+
     fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
         match mode {
             AddressingMode::Immediate => self.register.pc,
@@ -243,33 +146,33 @@ impl CPU {
             AddressingMode::Absolute => self.mem_read_u16(self.register.pc),
             AddressingMode::ZeroPage_X => {
                 let pos = self.mem_read(self.register.pc);
-                let addr = pos.wrapping_add(self.register.x) as u16;
+                let addr = pos.wrapping_add(self.register.read(&RegisterField::A)) as u16;
                 addr
             }
             AddressingMode::ZeroPage_Y => {
                 let pos = self.mem_read(self.register.pc);
-                let addr = pos.wrapping_add(self.register.y) as u16;
+                let addr = pos.wrapping_add(self.register.read(&RegisterField::Y)) as u16;
                 addr
             }
             AddressingMode::Absolute_X => {
                 let base = self.mem_read_u16(self.register.pc);
-                let addr = base.wrapping_add(self.register.x as u16) as u16;
+                let addr = base.wrapping_add(self.register.read(&RegisterField::X) as u16) as u16;
                 addr
             }
             AddressingMode::Absolute_Y => {
                 let base = self.mem_read_u16(self.register.pc);
-                let addr = base.wrapping_add(self.register.y as u16) as u16;
+                let addr = base.wrapping_add(self.register.read(&RegisterField::Y) as u16) as u16;
                 addr
             }
             AddressingMode::Indirect_X => {
                 let base = self.mem_read(self.register.pc);
-                let ptr = base.wrapping_add(self.register.x);
+                let ptr = base.wrapping_add(self.register.read(&RegisterField::X));
                 self.mem_read_u16(ptr as u16)
             }
             AddressingMode::Indirect_Y => {
                 let base = self.mem_read(self.register.pc);
                 let deref_base = self.mem_read_u16(base as u16);
-                deref_base.wrapping_add(self.register.y as u16)
+                deref_base.wrapping_add(self.register.read(&RegisterField::Y) as u16)
             }
             AddressingMode::NoneAddressing => { panic!("mode {:?} not supported", mode) }
         }
@@ -278,13 +181,14 @@ impl CPU {
 
 #[cfg(test)]
 mod test {
-    use crate::cpu::{CPU, CpuFlags, Mem, STACK_RESET};
+    use crate::cpu::{CPU, CpuFlags, Mem};
+    use crate::register::{RegisterField, STACK_RESET};
 
     #[test]
     fn test_0xa9_lda_immediate_load_data() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xa9, 0x05, 0x00]);
-        assert_eq!(cpu.register.a, 0x05);
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x05);
         assert_eq!(cpu.register.status.bits() & 0b0000_0010, 0b00);
         assert_eq!(cpu.register.status.bits() & 0b1000_0000, 0);
     }
@@ -301,7 +205,7 @@ mod test {
         let mut cpu = CPU::new();
         cpu.mem_write(0x10, 0x55);
         cpu.load_and_run(&[0xa5, 0x10, 0x00]);
-        assert_eq!(cpu.register.a, 0x55);
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x55);
         assert_eq!(cpu.register.status.bits() & 0b0000_0010, 0b00);
         assert_eq!(cpu.register.status.bits() & 0b1000_0000, 0);
     }
@@ -311,7 +215,7 @@ mod test {
         let mut cpu = CPU::new();
         cpu.mem_write(0x10, 0x00);
         cpu.load_and_run(&[0xa5, 0x10, 0x00]);
-        assert_eq!(cpu.register.a, 0x00);
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x00);
         assert_eq!(cpu.register.status.bits() & 0b0000_0010, 0b10);
     }
 
@@ -320,7 +224,7 @@ mod test {
         let mut cpu = CPU::new();
         cpu.mem_write_u16(0x1020, 0x55);
         cpu.load_and_run(&[0xad, 0x20, 0x10, 0x00]);
-        assert_eq!(cpu.register.a, 0x55);
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x55);
         assert_eq!(cpu.register.status.bits() & 0b0000_0010, 0b00);
         assert_eq!(cpu.register.status.bits() & 0b1000_0000, 0);
     }
@@ -330,7 +234,7 @@ mod test {
         let mut cpu = CPU::new();
         cpu.mem_write_u16(0x1020, 0x00);
         cpu.load_and_run(&[0xad, 0x20, 0x10, 0x00]);
-        assert_eq!(cpu.register.a, 0x00);
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x00);
         assert_eq!(cpu.register.status.bits() & 0b0000_0010, 0b10);
     }
 
@@ -339,14 +243,14 @@ mod test {
     fn test_5_ops_working_together() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xa9, 0xc0, 0xaa, 0xe8, 0x00]);
-        assert_eq!(cpu.register.x, 0xc1)
+        assert_eq!(cpu.register.read(&RegisterField::X), 0xc1)
     }
 
     #[test]
     fn test_inx_overflow() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xa9, 0xff, 0xaa, 0xe8, 0xe8, 0x00]);
-        assert_eq!(cpu.register.x, 1)
+        assert_eq!(cpu.register.read(&RegisterField::X), 1)
     }
 
 
@@ -354,14 +258,14 @@ mod test {
     fn test_iny_overflow() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA0, 0xff, 0xaa, 0xC8, 0xC8, 0x00]);
-        assert_eq!(cpu.register.y, 1)
+        assert_eq!(cpu.register.read(&RegisterField::Y), 1)
     }
 
     #[test]
     fn test_dex_underflow() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xCA, 0xCA, 0x00]);
-        assert_eq!(cpu.register.x, 254);
+        assert_eq!(cpu.register.read(&RegisterField::X), 254);
         assert!(cpu.register.status.contains(CpuFlags::NEGATIVE));
     }
 
@@ -369,7 +273,7 @@ mod test {
     fn test_dey_underflow() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0x88, 0x88, 0x00]);
-        assert_eq!(cpu.register.y, 254);
+        assert_eq!(cpu.register.read(&RegisterField::Y), 254);
         assert!(cpu.register.status.contains(CpuFlags::NEGATIVE));
     }
 
@@ -377,7 +281,7 @@ mod test {
     fn test_0x85_sta_write_accum_to_memory() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA9, 0xBA, 0x85, 0xAA, 0x00]);
-        assert_eq!(cpu.register.a, 0xBA);
+        assert_eq!(cpu.register.read(&RegisterField::A), 0xBA);
         assert_eq!(cpu.mem_read(0xAA), 0xBA);
     }
 
@@ -386,7 +290,7 @@ mod test {
     fn test_0x86_stx_write_x_reg_to_memory() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA2, 0xBA, 0x86, 0xAA, 0x00]);
-        assert_eq!(cpu.register.x, 0xBA);
+        assert_eq!(cpu.register.read(&RegisterField::X), 0xBA);
         assert_eq!(cpu.mem_read(0xAA), 0xBA);
     }
 
@@ -394,7 +298,7 @@ mod test {
     fn test_0x84_sty_write_y_reg_to_memory() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA0, 0xBA, 0x84, 0xAA, 0x00]);
-        assert_eq!(cpu.register.y, 0xBA);
+        assert_eq!(cpu.register.read(&RegisterField::Y), 0xBA);
         assert_eq!(cpu.mem_read(0xAA), 0xBA);
     }
 
@@ -402,15 +306,15 @@ mod test {
     fn test_0xaa_tax_move_a_to_x() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xa9, 0x10, 0xaa, 0x00]);
-        assert_eq!(cpu.register.x, cpu.register.a);
+        assert_eq!(cpu.register.read(&RegisterField::X), cpu.register.read(&RegisterField::A));
     }
 
     #[test]
     fn test_0xaa_txa_move_x_to_a() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xa2, 0x10, 0x8a, 0x00]);
-        assert_eq!(cpu.register.a, cpu.register.x);
-        assert_eq!(cpu.register.a, 0x10);
+        assert_eq!(cpu.register.read(&RegisterField::A), cpu.register.read(&RegisterField::X));
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x10);
     }
 
 
@@ -418,15 +322,15 @@ mod test {
     fn test_0xaa_tya_move_y_to_a() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xa0, 0x10, 0x98, 0x00]);
-        assert_eq!(cpu.register.y, cpu.register.a);
-        assert_eq!(cpu.register.a, 0x10);
+        assert_eq!(cpu.register.read(&RegisterField::Y), cpu.register.read(&RegisterField::A));
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x10);
     }
 
     #[test]
     fn test_0xaa_txs_move_x_to_sp() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA2, 0x10, 0x9A, 0x00]);
-        assert_eq!(cpu.register.x, cpu.register.sp);
+        assert_eq!(cpu.register.read(&RegisterField::X), cpu.register.sp);
         assert_eq!(cpu.register.sp, 0x10);
     }
 
@@ -434,7 +338,7 @@ mod test {
     fn test_0xaa_tsx_move_sp_to_x() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xBA, 0x00]);
-        assert_eq!(cpu.register.x, STACK_RESET);
+        assert_eq!(cpu.register.read(&RegisterField::X), STACK_RESET);
     }
 
     #[test]
@@ -459,5 +363,4 @@ mod test {
         cpu.load_and_run(&[0x78, 0x00]);
         assert!(cpu.register.status.contains(CpuFlags::INTERRUPT_DISABLE));
     }
-
 }
