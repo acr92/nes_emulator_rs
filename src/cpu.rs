@@ -73,6 +73,8 @@ impl CPU {
                 Instruction::BRK => { return; }
                 Instruction::NOP => {}
 
+                Instruction::AND => { self.and(&opcode.mode) }
+
 
                 Instruction::DEX => { self.decrement(RegisterField::X) }
                 Instruction::DEY => { self.decrement(RegisterField::Y) }
@@ -134,9 +136,10 @@ impl CPU {
         self.mem_write(addr, self.register.read(&source))
     }
 
-    fn and(&self, mode: &AddressingMode) {
+    fn and(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
-        let value = self.mem_read(addr);
+        let value = self.register.read(&RegisterField::A) & self.mem_read(addr);
+        self.register.write(&RegisterField::A, value);
     }
 
     fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
@@ -362,5 +365,22 @@ mod test {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0x78, 0x00]);
         assert!(cpu.register.status.contains(CpuFlags::INTERRUPT_DISABLE));
+    }
+
+    #[test]
+    fn test_0x29_logical_and_on_immediate() {
+        let mut cpu = CPU::new();
+        // 0b1010_1010 & 0b0111 = 0b0000_0010 = 0x02
+        cpu.load_and_run(&[0xA9, 0xAA, 0x29, 0x07, 0x00]);
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x02);
+    }
+
+    #[test]
+    fn test_0x2d_logical_and_on_absolute() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x1234, 0x07);
+        // 0b1010_1010 & 0b0111 = 0b0000_0010 = 0x02
+        cpu.load_and_run(&[0xA9, 0xAA, 0x2D, 0x34, 0x12, 0x00]);
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x02);
     }
 }
