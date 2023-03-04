@@ -74,7 +74,7 @@ impl CPU {
                 Instruction::NOP => {}
 
                 Instruction::AND => { self.and(&opcode.mode) }
-
+                Instruction::BIT => { self.bit(&opcode.mode) }
 
                 Instruction::DEX => { self.decrement(RegisterField::X) }
                 Instruction::DEY => { self.decrement(RegisterField::Y) }
@@ -86,6 +86,10 @@ impl CPU {
                 Instruction::LDX => { self.load(RegisterField::X, &opcode.mode) }
                 Instruction::LDY => { self.load(RegisterField::Y, &opcode.mode) }
 
+                Instruction::CLC => { self.register.status.remove(CpuFlags::CARRY) }
+                Instruction::CLD => { self.register.status.remove(CpuFlags::DECIMAL_MODE) }
+                Instruction::CLI => { self.register.status.remove(CpuFlags::INTERRUPT_DISABLE) }
+                Instruction::CLV => { self.register.status.remove(CpuFlags::OVERFLOW) }
                 Instruction::SEC => { self.register.status.insert(CpuFlags::CARRY) }
                 Instruction::SED => { self.register.status.insert(CpuFlags::DECIMAL_MODE) }
                 Instruction::SEI => { self.register.status.insert(CpuFlags::INTERRUPT_DISABLE) }
@@ -140,6 +144,15 @@ impl CPU {
         let addr = self.get_operand_address(mode);
         let value = self.register.read(&RegisterField::A) & self.mem_read(addr);
         self.register.write(&RegisterField::A, value);
+    }
+
+    fn bit(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.register.read(&RegisterField::A) & self.mem_read(addr);
+
+        self.register.status.set(CpuFlags::NEGATIVE, value & 0b1000_0000 != 0);
+        self.register.status.set(CpuFlags::OVERFLOW, value & 0b0100_0000 != 0);
+        self.register.status.set(CpuFlags::ZERO, value == 0);
     }
 
     fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
@@ -367,6 +380,68 @@ mod test {
         assert!(cpu.register.status.contains(CpuFlags::INTERRUPT_DISABLE));
     }
 
+
+    #[test]
+    fn test_0x18_clear_carry_flag() {
+        let mut cpu = CPU::new();
+        assert!(!cpu.register.status.contains(CpuFlags::CARRY));
+        cpu.load_and_run(&[0x38, 0x18, 0x00]);
+        assert!(!cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0xd8_clear_decimal_flag() {
+        let mut cpu = CPU::new();
+        assert!(!cpu.register.status.contains(CpuFlags::DECIMAL_MODE));
+        cpu.load_and_run(&[0xf8, 0xd8, 0x00]);
+        assert!(!cpu.register.status.contains(CpuFlags::DECIMAL_MODE));
+    }
+
+    #[test]
+    fn test_0x58_clear_interrupt_disable_flag() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0x78, 0x58, 0x00]);
+        assert!(!cpu.register.status.contains(CpuFlags::INTERRUPT_DISABLE));
+    }
+
+    #[test]
+    fn test_0xb8_clear_overflow_flag() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0xAA, 0xF0);
+        cpu.load_and_run(&[0xA9, 0x70, 0x24, 0xAA, 0xB8, 0x00]);
+        assert!(!cpu.register.status.contains(CpuFlags::OVERFLOW));
+    }
+
+    #[test]
+    fn test_0x24_bit_test_should_only_set_overflow() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0xAA, 0xF0);
+        cpu.load_and_run(&[0xA9, 0x70, 0x24, 0xAA, 0x00]);
+        assert!(cpu.register.status.contains(CpuFlags::OVERFLOW));
+        assert!(!cpu.register.status.contains(CpuFlags::NEGATIVE));
+        assert!(!cpu.register.status.contains(CpuFlags::ZERO));
+    }
+
+    #[test]
+    fn test_0x24_bit_test_should_only_set_zero() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0xAA, 0x0F);
+        cpu.load_and_run(&[0xA9, 0xF0, 0x24, 0xAA, 0x00]);
+        assert!(!cpu.register.status.contains(CpuFlags::OVERFLOW));
+        assert!(!cpu.register.status.contains(CpuFlags::NEGATIVE));
+        assert!(cpu.register.status.contains(CpuFlags::ZERO));
+    }
+
+    #[test]
+    fn test_0x24_bit_test_should_only_set_negative() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0xAA, 0xB0);
+        cpu.load_and_run(&[0xA9, 0xF0, 0x24, 0xAA, 0x00]);
+        assert!(!cpu.register.status.contains(CpuFlags::OVERFLOW));
+        assert!(cpu.register.status.contains(CpuFlags::NEGATIVE));
+        assert!(!cpu.register.status.contains(CpuFlags::ZERO));
+    }
+
     #[test]
     fn test_0x29_logical_and_on_immediate() {
         let mut cpu = CPU::new();
@@ -383,4 +458,5 @@ mod test {
         cpu.load_and_run(&[0xA9, 0xAA, 0x2D, 0x34, 0x12, 0x00]);
         assert_eq!(cpu.register.read(&RegisterField::A), 0x02);
     }
+
 }
