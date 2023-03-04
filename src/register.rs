@@ -67,21 +67,19 @@ impl Register {
 
     pub fn write(&mut self, field: &RegisterField, value: u8) {
         match field {
-            RegisterField::A => { self.a = value }
-            RegisterField::X => { self.x = value }
-            RegisterField::Y => { self.y = value }
-            RegisterField::SP => { self.sp = value }
+            RegisterField::A => self.a = value,
+            RegisterField::X => self.x = value,
+            RegisterField::Y => self.y = value,
+            RegisterField::SP => self.sp = value,
         }
 
         match field {
             RegisterField::SP => {}
-            _ => {
-                self.update_zero_and_negative_flags(value)
-            }
+            _ => self.update_zero_and_negative_flags(value),
         }
     }
 
-    fn update_zero_and_negative_flags(&mut self, result: u8) {
+    pub fn update_zero_and_negative_flags(&mut self, result: u8) {
         // set Zero Flag if A = 0
         if result == 0 {
             self.status.insert(CpuFlags::ZERO);

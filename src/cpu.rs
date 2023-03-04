@@ -67,45 +67,53 @@ impl CPU {
             self.register.pc += 1;
             let program_counter_state = self.register.pc;
 
-            let opcode = opcodes.get(&code).expect(&format!("Opcode {:x} is not recognized", code));
+            let opcode = opcodes
+                .get(&code)
+                .expect(&format!("Opcode {:x} is not recognized", code));
 
             match opcode.instruction {
-                Instruction::BRK => { return; }
+                Instruction::BRK => {
+                    return;
+                }
                 Instruction::NOP => {}
 
-                Instruction::AND => { self.and(&opcode.mode) }
-                Instruction::BIT => { self.bit(&opcode.mode) }
+                Instruction::ADC => self.adc(&opcode.mode),
+                Instruction::AND => self.and(&opcode.mode),
+                Instruction::ASL => self.asl(&opcode.mode),
+                Instruction::BIT => self.bit(&opcode.mode),
 
-                Instruction::DEX => { self.decrement(RegisterField::X) }
-                Instruction::DEY => { self.decrement(RegisterField::Y) }
+                Instruction::DEX => self.decrement(RegisterField::X),
+                Instruction::DEY => self.decrement(RegisterField::Y),
 
-                Instruction::INX => { self.increment(RegisterField::X) }
-                Instruction::INY => { self.increment(RegisterField::Y) }
+                Instruction::INX => self.increment(RegisterField::X),
+                Instruction::INY => self.increment(RegisterField::Y),
 
-                Instruction::LDA => { self.load(RegisterField::A, &opcode.mode) }
-                Instruction::LDX => { self.load(RegisterField::X, &opcode.mode) }
-                Instruction::LDY => { self.load(RegisterField::Y, &opcode.mode) }
+                Instruction::LDA => self.load(RegisterField::A, &opcode.mode),
+                Instruction::LDX => self.load(RegisterField::X, &opcode.mode),
+                Instruction::LDY => self.load(RegisterField::Y, &opcode.mode),
 
-                Instruction::CLC => { self.register.status.remove(CpuFlags::CARRY) }
-                Instruction::CLD => { self.register.status.remove(CpuFlags::DECIMAL_MODE) }
-                Instruction::CLI => { self.register.status.remove(CpuFlags::INTERRUPT_DISABLE) }
-                Instruction::CLV => { self.register.status.remove(CpuFlags::OVERFLOW) }
-                Instruction::SEC => { self.register.status.insert(CpuFlags::CARRY) }
-                Instruction::SED => { self.register.status.insert(CpuFlags::DECIMAL_MODE) }
-                Instruction::SEI => { self.register.status.insert(CpuFlags::INTERRUPT_DISABLE) }
+                Instruction::CLC => self.register.status.remove(CpuFlags::CARRY),
+                Instruction::CLD => self.register.status.remove(CpuFlags::DECIMAL_MODE),
+                Instruction::CLI => self.register.status.remove(CpuFlags::INTERRUPT_DISABLE),
+                Instruction::CLV => self.register.status.remove(CpuFlags::OVERFLOW),
+                Instruction::SEC => self.register.status.insert(CpuFlags::CARRY),
+                Instruction::SED => self.register.status.insert(CpuFlags::DECIMAL_MODE),
+                Instruction::SEI => self.register.status.insert(CpuFlags::INTERRUPT_DISABLE),
 
-                Instruction::STA => { self.store(RegisterField::A, &opcode.mode) }
-                Instruction::STX => { self.store(RegisterField::X, &opcode.mode) }
-                Instruction::STY => { self.store(RegisterField::Y, &opcode.mode) }
+                Instruction::STA => self.store(RegisterField::A, &opcode.mode),
+                Instruction::STX => self.store(RegisterField::X, &opcode.mode),
+                Instruction::STY => self.store(RegisterField::Y, &opcode.mode),
 
-                Instruction::TAX => { self.transfer(RegisterField::A, RegisterField::X) }
-                Instruction::TAY => { self.transfer(RegisterField::A, RegisterField::Y) }
-                Instruction::TSX => { self.transfer(RegisterField::SP, RegisterField::X) }
-                Instruction::TXA => { self.transfer(RegisterField::X, RegisterField::A) }
-                Instruction::TXS => { self.transfer(RegisterField::X, RegisterField::SP) }
-                Instruction::TYA => { self.transfer(RegisterField::Y, RegisterField::A) }
+                Instruction::TAX => self.transfer(RegisterField::A, RegisterField::X),
+                Instruction::TAY => self.transfer(RegisterField::A, RegisterField::Y),
+                Instruction::TSX => self.transfer(RegisterField::SP, RegisterField::X),
+                Instruction::TXA => self.transfer(RegisterField::X, RegisterField::A),
+                Instruction::TXS => self.transfer(RegisterField::X, RegisterField::SP),
+                Instruction::TYA => self.transfer(RegisterField::Y, RegisterField::A),
 
-                _ => { todo!("Unknown opcode 0x{:X} {:#?}", code, opcode.instruction) }
+                _ => {
+                    todo!("Unknown opcode 0x{:X} {:#?}", code, opcode.instruction)
+                }
             }
 
             if program_counter_state == self.register.pc {
@@ -140,18 +148,63 @@ impl CPU {
         self.mem_write(addr, self.register.read(&source))
     }
 
+    fn adc(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let data = self.mem_read(addr);
+        let a = self.register.read(&RegisterField::A);
+        let carry = if self.register.status.contains(CpuFlags::CARRY) {
+            1
+        } else {
+            0
+        };
+
+        let sum = a as u16 + data as u16 + carry;
+        self.register.status.set(CpuFlags::CARRY, sum > 0xFF);
+
+        let result = sum as u8;
+
+        self.register.status.set(
+            CpuFlags::OVERFLOW,
+            (data ^ result) & (result ^ a) & 0x80 != 0,
+        );
+        self.register.write(&RegisterField::A, result);
+    }
+
     fn and(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.register.read(&RegisterField::A) & self.mem_read(addr);
         self.register.write(&RegisterField::A, value);
     }
 
+    fn asl(&mut self, mode: &AddressingMode) {
+        let (mut data, addr) = if let AddressingMode::NoneAddressing = mode {
+            (self.register.read(&RegisterField::A), 0x00)
+        } else {
+            let addr = self.get_operand_address(mode);
+            (self.mem_read(addr), addr)
+        };
+
+        self.register.status.set(CpuFlags::CARRY, data >> 7 == 1);
+        data <<= 1;
+
+        if let AddressingMode::NoneAddressing = mode {
+            self.register.write(&RegisterField::A, data);
+        } else {
+            self.mem_write(addr, data);
+            self.register.update_zero_and_negative_flags(data);
+        }
+    }
+
     fn bit(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.register.read(&RegisterField::A) & self.mem_read(addr);
 
-        self.register.status.set(CpuFlags::NEGATIVE, value & 0b1000_0000 != 0);
-        self.register.status.set(CpuFlags::OVERFLOW, value & 0b0100_0000 != 0);
+        self.register
+            .status
+            .set(CpuFlags::NEGATIVE, value & 0b1000_0000 != 0);
+        self.register
+            .status
+            .set(CpuFlags::OVERFLOW, value & 0b0100_0000 != 0);
         self.register.status.set(CpuFlags::ZERO, value == 0);
     }
 
@@ -190,14 +243,16 @@ impl CPU {
                 let deref_base = self.mem_read_u16(base as u16);
                 deref_base.wrapping_add(self.register.read(&RegisterField::Y) as u16)
             }
-            AddressingMode::NoneAddressing => { panic!("mode {:?} not supported", mode) }
+            AddressingMode::NoneAddressing => {
+                panic!("mode {:?} not supported", mode)
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::cpu::{CPU, CpuFlags, Mem};
+    use crate::cpu::{CpuFlags, Mem, CPU};
     use crate::register::{RegisterField, STACK_RESET};
 
     #[test]
@@ -254,7 +309,6 @@ mod test {
         assert_eq!(cpu.register.status.bits() & 0b0000_0010, 0b10);
     }
 
-
     #[test]
     fn test_5_ops_working_together() {
         let mut cpu = CPU::new();
@@ -268,7 +322,6 @@ mod test {
         cpu.load_and_run(&[0xa9, 0xff, 0xaa, 0xe8, 0xe8, 0x00]);
         assert_eq!(cpu.register.read(&RegisterField::X), 1)
     }
-
 
     #[test]
     fn test_iny_overflow() {
@@ -301,7 +354,6 @@ mod test {
         assert_eq!(cpu.mem_read(0xAA), 0xBA);
     }
 
-
     #[test]
     fn test_0x86_stx_write_x_reg_to_memory() {
         let mut cpu = CPU::new();
@@ -322,23 +374,31 @@ mod test {
     fn test_0xaa_tax_move_a_to_x() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xa9, 0x10, 0xaa, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::X), cpu.register.read(&RegisterField::A));
+        assert_eq!(
+            cpu.register.read(&RegisterField::X),
+            cpu.register.read(&RegisterField::A)
+        );
     }
 
     #[test]
     fn test_0xaa_txa_move_x_to_a() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xa2, 0x10, 0x8a, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::A), cpu.register.read(&RegisterField::X));
+        assert_eq!(
+            cpu.register.read(&RegisterField::A),
+            cpu.register.read(&RegisterField::X)
+        );
         assert_eq!(cpu.register.read(&RegisterField::A), 0x10);
     }
-
 
     #[test]
     fn test_0xaa_tya_move_y_to_a() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xa0, 0x10, 0x98, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::Y), cpu.register.read(&RegisterField::A));
+        assert_eq!(
+            cpu.register.read(&RegisterField::Y),
+            cpu.register.read(&RegisterField::A)
+        );
         assert_eq!(cpu.register.read(&RegisterField::A), 0x10);
     }
 
@@ -379,7 +439,6 @@ mod test {
         cpu.load_and_run(&[0x78, 0x00]);
         assert!(cpu.register.status.contains(CpuFlags::INTERRUPT_DISABLE));
     }
-
 
     #[test]
     fn test_0x18_clear_carry_flag() {
@@ -459,4 +518,73 @@ mod test {
         assert_eq!(cpu.register.read(&RegisterField::A), 0x02);
     }
 
+    #[test]
+    fn test_0x69_adc_no_overflow_no_carry() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA9, 0x02, 0x69, 0x02, 0x00]);
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x04);
+        assert!(!cpu.register.status.contains(CpuFlags::ZERO));
+        assert!(!cpu.register.status.contains(CpuFlags::OVERFLOW));
+        assert!(!cpu.register.status.contains(CpuFlags::CARRY));
+        assert!(!cpu.register.status.contains(CpuFlags::NEGATIVE));
+    }
+
+    #[test]
+    fn test_0x69_adc_overflow_carry_bit_set() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA9, 0xFF, 0x69, 0x02, 0x00]);
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x01);
+        assert!(!cpu.register.status.contains(CpuFlags::ZERO));
+        assert!(!cpu.register.status.contains(CpuFlags::OVERFLOW));
+        assert!(cpu.register.status.contains(CpuFlags::CARRY));
+        assert!(!cpu.register.status.contains(CpuFlags::NEGATIVE));
+    }
+
+    #[test]
+    fn test_0x69_adc_zero() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA9, 0xFF, 0x69, 0x01, 0x00]);
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x00);
+        assert!(cpu.register.status.contains(CpuFlags::ZERO));
+        assert!(!cpu.register.status.contains(CpuFlags::OVERFLOW));
+        assert!(cpu.register.status.contains(CpuFlags::CARRY));
+        assert!(!cpu.register.status.contains(CpuFlags::NEGATIVE));
+    }
+
+    #[test]
+    fn test_0x69_adc_sign_bit_incorrect() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA9, 0x80, 0x69, 0x80, 0x00]);
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x00);
+        assert!(cpu.register.status.contains(CpuFlags::ZERO));
+        assert!(cpu.register.status.contains(CpuFlags::OVERFLOW));
+        assert!(cpu.register.status.contains(CpuFlags::CARRY));
+        assert!(!cpu.register.status.contains(CpuFlags::NEGATIVE));
+    }
+
+    #[test]
+    fn test_0x0a_asl_carry() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA9, 0x81, 0x0A, 0x00]);
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x02);
+        assert!(cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0x0a_asl_no_carry() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA9, 0x41, 0x0A, 0x00]);
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x82);
+        assert!(!cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0x06_asl_update_memory_and_set_carry() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x40, 0x81);
+        cpu.load_and_run(&[0x06, 0x40, 0x00]);
+        assert_eq!(cpu.mem_read(0x40), 0x02);
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x00);
+        assert!(cpu.register.status.contains(CpuFlags::CARRY));
+    }
 }
