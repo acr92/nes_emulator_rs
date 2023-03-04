@@ -82,6 +82,10 @@ impl CPU {
                 Instruction::ASL => self.asl(&opcode.mode),
                 Instruction::BIT => self.bit(&opcode.mode),
 
+                Instruction::CMP => self.compare(RegisterField::A, &opcode.mode),
+                Instruction::CPX => self.compare(RegisterField::X, &opcode.mode),
+                Instruction::CPY => self.compare(RegisterField::Y, &opcode.mode),
+
                 Instruction::DEX => self.decrement(RegisterField::X),
                 Instruction::DEY => self.decrement(RegisterField::Y),
 
@@ -148,6 +152,19 @@ impl CPU {
         self.mem_write(addr, self.register.read(&source))
     }
 
+    fn compare(&mut self, source: RegisterField, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+
+        let lhs = self.register.read(&source);
+        let rhs = self.mem_read(addr);
+
+        let result = lhs.wrapping_sub(rhs);
+
+        self.register.status.set(CpuFlags::CARRY, lhs >= rhs);
+        self.register.status.set(CpuFlags::ZERO, lhs == rhs);
+        self.register.status.set(CpuFlags::NEGATIVE, result >= 0x80);
+    }
+
     fn adc(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let data = self.mem_read(addr);
@@ -207,7 +224,6 @@ impl CPU {
             .set(CpuFlags::OVERFLOW, value & 0b0100_0000 != 0);
         self.register.status.set(CpuFlags::ZERO, value == 0);
     }
-
     fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
         match mode {
             AddressingMode::Immediate => self.register.pc,
@@ -585,6 +601,66 @@ mod test {
         cpu.load_and_run(&[0x06, 0x40, 0x00]);
         assert_eq!(cpu.mem_read(0x40), 0x02);
         assert_eq!(cpu.register.read(&RegisterField::A), 0x00);
+        assert!(cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0xc9_cmp_equal() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA9, 0xAA, 0xC9, 0xAA, 0x00]);
+        assert!(cpu.register.status.contains(CpuFlags::ZERO));
+        assert!(cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0xc9_cmp_gt_eq() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA9, 0xFF, 0xC9, 0x00, 0x00]);
+        assert!(!cpu.register.status.contains(CpuFlags::ZERO));
+        assert!(cpu.register.status.contains(CpuFlags::CARRY));
+        assert!(cpu.register.status.contains(CpuFlags::NEGATIVE));
+    }
+
+    #[test]
+    fn test_0xc5_cmp_equal() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0xAA, 0xF0);
+        cpu.load_and_run(&[0xA9, 0xF0, 0xC5, 0xAA, 0x00]);
+        assert!(cpu.register.status.contains(CpuFlags::ZERO));
+        assert!(cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0xe0_cpx() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA2, 0xAA, 0xE0, 0xAA, 0x00]);
+        assert!(cpu.register.status.contains(CpuFlags::ZERO));
+        assert!(cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0xec_cpx() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0xAA, 0xF0);
+        cpu.load_and_run(&[0xA2, 0xF0, 0xEC, 0xAA, 0x00]);
+        assert!(cpu.register.status.contains(CpuFlags::ZERO));
+        assert!(cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0xc0_cpy() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA0, 0xAA, 0xC0, 0xAA, 0x00]);
+        assert!(cpu.register.status.contains(CpuFlags::ZERO));
+        assert!(cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0xcc_cpy() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0xAA, 0xF0);
+        cpu.load_and_run(&[0xA0, 0xF0, 0xCC, 0xAA, 0x00]);
+        assert!(cpu.register.status.contains(CpuFlags::ZERO));
         assert!(cpu.register.status.contains(CpuFlags::CARRY));
     }
 }
