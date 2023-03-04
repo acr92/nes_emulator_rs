@@ -86,8 +86,9 @@ impl CPU {
                 Instruction::CPX => self.compare(RegisterField::X, &opcode.mode),
                 Instruction::CPY => self.compare(RegisterField::Y, &opcode.mode),
 
-                Instruction::DEX => self.decrement(RegisterField::X),
-                Instruction::DEY => self.decrement(RegisterField::Y),
+                Instruction::DEC => self.decrement_memory(&opcode.mode),
+                Instruction::DEX => self.decrement_register(RegisterField::X),
+                Instruction::DEY => self.decrement_register(RegisterField::Y),
 
                 Instruction::INX => self.increment(RegisterField::X),
                 Instruction::INY => self.increment(RegisterField::Y),
@@ -95,6 +96,7 @@ impl CPU {
                 Instruction::LDA => self.load(RegisterField::A, &opcode.mode),
                 Instruction::LDX => self.load(RegisterField::X, &opcode.mode),
                 Instruction::LDY => self.load(RegisterField::Y, &opcode.mode),
+                Instruction::LSR => self.lsr(&opcode.mode),
 
                 Instruction::CLC => self.register.status.remove(CpuFlags::CARRY),
                 Instruction::CLD => self.register.status.remove(CpuFlags::DECIMAL_MODE),
@@ -142,9 +144,19 @@ impl CPU {
         self.register.write(&target, value);
     }
 
-    fn decrement(&mut self, target: RegisterField) {
+    fn decrement_register(&mut self, target: RegisterField) {
         let value = self.register.read(&target).wrapping_sub(1);
         self.register.write(&target, value);
+    }
+
+    fn decrement_memory(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let mut value = self.mem_read(addr);
+
+        value = value.wrapping_sub(1);
+        self.mem_write(addr, value);
+
+        self.register.update_zero_and_negative_flags(value);
     }
 
     fn store(&mut self, source: RegisterField, mode: &AddressingMode) {
@@ -212,6 +224,25 @@ impl CPU {
         }
     }
 
+    fn lsr(&mut self, mode: &AddressingMode) {
+        let (mut data, addr) = if let AddressingMode::NoneAddressing = mode {
+            (self.register.read(&RegisterField::A), 0x00)
+        } else {
+            let addr = self.get_operand_address(mode);
+            (self.mem_read(addr), addr)
+        };
+
+        self.register.status.set(CpuFlags::CARRY, data & 0x1 == 1);
+        data >>= 1;
+
+        if let AddressingMode::NoneAddressing = mode {
+            self.register.write(&RegisterField::A, data);
+        } else {
+            self.mem_write(addr, data);
+            self.register.update_zero_and_negative_flags(data);
+        }
+    }
+
     fn bit(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.register.read(&RegisterField::A) & self.mem_read(addr);
@@ -224,6 +255,7 @@ impl CPU {
             .set(CpuFlags::OVERFLOW, value & 0b0100_0000 != 0);
         self.register.status.set(CpuFlags::ZERO, value == 0);
     }
+
     fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
         match mode {
             AddressingMode::Immediate => self.register.pc,
@@ -333,21 +365,39 @@ mod test {
     }
 
     #[test]
-    fn test_inx_overflow() {
+    fn test_0xe8_inx_overflow() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xa9, 0xff, 0xaa, 0xe8, 0xe8, 0x00]);
         assert_eq!(cpu.register.read(&RegisterField::X), 1)
     }
 
     #[test]
-    fn test_iny_overflow() {
+    fn test_0xc8_iny_overflow() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA0, 0xff, 0xaa, 0xC8, 0xC8, 0x00]);
         assert_eq!(cpu.register.read(&RegisterField::Y), 1)
     }
 
     #[test]
-    fn test_dex_underflow() {
+    fn test_0xc6_dec() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0xCA, 0x02);
+        cpu.load_and_run(&[0xC6, 0xCA, 0x00]);
+        assert_eq!(cpu.mem_read(0xCA), 0x01);
+        assert!(!cpu.register.status.contains(CpuFlags::ZERO));
+    }
+
+    #[test]
+    fn test_0xc6_dec_to_zero() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0xCA, 0x02);
+        cpu.load_and_run(&[0xC6, 0xCA, 0xC6, 0xCA, 0x00]);
+        assert_eq!(cpu.mem_read(0xCA), 0x00);
+        assert!(cpu.register.status.contains(CpuFlags::ZERO));
+    }
+
+    #[test]
+    fn test_0xca_dex_underflow() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xCA, 0xCA, 0x00]);
         assert_eq!(cpu.register.read(&RegisterField::X), 254);
@@ -355,7 +405,7 @@ mod test {
     }
 
     #[test]
-    fn test_dey_underflow() {
+    fn test_0x88_dey_underflow() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0x88, 0x88, 0x00]);
         assert_eq!(cpu.register.read(&RegisterField::Y), 254);
@@ -600,6 +650,32 @@ mod test {
         cpu.mem_write(0x40, 0x81);
         cpu.load_and_run(&[0x06, 0x40, 0x00]);
         assert_eq!(cpu.mem_read(0x40), 0x02);
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x00);
+        assert!(cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0x4a_lsr_carry() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA9, 0x81, 0x4A, 0x00]);
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x40);
+        assert!(cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0x4a_lsr_no_carry() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA9, 0x40, 0x4A, 0x00]);
+        assert_eq!(cpu.register.read(&RegisterField::A), 0x20);
+        assert!(!cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0x46_lsr_update_memory_and_set_carry() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x40, 0x81);
+        cpu.load_and_run(&[0x46, 0x40, 0x00]);
+        assert_eq!(cpu.mem_read(0x40), 0x40);
         assert_eq!(cpu.register.read(&RegisterField::A), 0x00);
         assert!(cpu.register.status.contains(CpuFlags::CARRY));
     }
