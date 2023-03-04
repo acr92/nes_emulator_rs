@@ -17,6 +17,7 @@ This is a NES emulator written in Rust, following Rafael Bagmanov's e-book, [Wri
 ## Resources used
 
 - [Writing NES Emulator in Rust](https://bugzmanov.github.io/nes_ebook)
+- [Easy 6502](https://skilldrick.github.io/easy6502/)
 
 ## Contributing
 
