@@ -1,6 +1,10 @@
 # NES Emulator in Rust
 
+![Rust Build](https://github.com/acr92/nes_emulator_rs/actions/workflows/rust.yml/badge.svg)
+
 This is a NES emulator written in Rust, following Rafael Bagmanov's e-book, [Writing NES Emulator in Rust](https://bugzmanov.github.io/nes_ebook).
+
+The emulator exists as a learning project, and will deviate from the e-book to explore Rust ideoms, where I see fit.
 
 ## Installation
 
