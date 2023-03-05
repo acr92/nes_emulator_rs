@@ -506,6 +506,7 @@ fn ror(data: u8, carry: bool) -> (u8, bool) {
 mod test {
     use crate::cpu::{CpuFlags, Mem, CPU};
     use crate::opcodes;
+    use crate::opcodes::AddressingMode;
     use crate::register::{RegisterField, STACK_RESET};
 
     #[test]
@@ -1320,5 +1321,89 @@ mod test {
         for op in opcodes {
             cpu.load_and_run(&[op.code, 0x00, 0x00, 0x00, 0x00]);
         }
+    }
+
+    #[test]
+    fn test_immediate_mode() {
+        let mut cpu = CPU::new();
+        cpu.register.pc = 0x200;
+        assert_eq!(
+            cpu.register.pc,
+            cpu.get_operand_address(&AddressingMode::Immediate)
+        );
+    }
+
+    #[test]
+    fn test_zero_page_mode() {
+        let mut cpu = CPU::new();
+        cpu.register.pc = 0x10;
+        cpu.mem_write(0x10, 0x42);
+        assert_eq!(cpu.get_operand_address(&AddressingMode::ZeroPage), 0x42);
+    }
+
+    #[test]
+    fn test_absolute_mode() {
+        let mut cpu = CPU::new();
+        cpu.register.pc = 0x10;
+        cpu.mem_write_u16(0x10, 0x1234);
+        assert_eq!(cpu.get_operand_address(&AddressingMode::Absolute), 0x1234);
+    }
+
+    #[test]
+    fn test_zero_page_x_mode() {
+        let mut cpu = CPU::new();
+        cpu.register.pc = 0x10;
+        cpu.mem_write(0x10, 0x10);
+        cpu.register.write(RegisterField::X, 0x32);
+        assert_eq!(cpu.get_operand_address(&AddressingMode::ZeroPage_X), 0x42);
+    }
+
+    #[test]
+    fn test_zero_page_y_mode() {
+        let mut cpu = CPU::new();
+        cpu.register.pc = 0x10;
+        cpu.mem_write(0x10, 0x10);
+        cpu.register.write(RegisterField::Y, 0x22);
+        assert_eq!(cpu.get_operand_address(&AddressingMode::ZeroPage_Y), 0x32);
+    }
+
+    #[test]
+    fn test_absolute_x_mode() {
+        let mut cpu = CPU::new();
+        cpu.register.pc = 0x10;
+        cpu.mem_write_u16(0x10, 0x1234);
+        cpu.register.write(RegisterField::X, 0x05);
+        assert_eq!(cpu.get_operand_address(&AddressingMode::Absolute_X), 0x1239);
+    }
+
+    #[test]
+    fn test_absolute_y_mode() {
+        let mut cpu = CPU::new();
+        cpu.register.pc = 0x10;
+        cpu.mem_write_u16(0x10, 0x1000);
+        cpu.register.write(RegisterField::Y, 0x05);
+        assert_eq!(cpu.get_operand_address(&AddressingMode::Absolute_Y), 0x1005);
+    }
+
+    #[test]
+    fn test_indirect_x_mode() {
+        let mut cpu = CPU::new();
+        cpu.register.pc = 0x10;
+        cpu.mem_write(0x10, 0x80);
+        cpu.register.write(RegisterField::X, 0x05);
+        cpu.mem_write_u16(0x85, 0x2000);
+
+        assert_eq!(cpu.get_operand_address(&AddressingMode::Indirect_X), 0x2000);
+    }
+
+    #[test]
+    fn test_indirect_y_mode() {
+        let mut cpu = CPU::new();
+        cpu.register.pc = 0x10;
+        cpu.mem_write(0x10, 0x50);
+        cpu.mem_write_u16(0x50, 0x2000);
+        cpu.register.write(RegisterField::Y, 0x05);
+
+        assert_eq!(cpu.get_operand_address(&AddressingMode::Indirect_Y), 0x2005);
     }
 }
