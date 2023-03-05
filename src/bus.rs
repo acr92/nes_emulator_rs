@@ -26,6 +26,8 @@
 // | Zero Page     |       |               |
 // |_______________| $0000 |_______________|
 
+use crate::rom::Rom;
+
 const CPU_VRAM_SIZE: usize = 0x800;
 const RAM_START: u16 = 0x0000;
 const RAM_MIRRORS_END: u16 = 0x2000 - 1;
@@ -40,15 +42,14 @@ const APU_REGISTERS_START: u16 = 0x4000;
 const APU_REGISTERS_SIZE: usize = 0x18 + 0x08;
 const APU_REGISTERS_END: u16 = APU_REGISTERS_START + (APU_REGISTERS_SIZE as u16) - 1;
 
-const CARTRIDGE_START: u16 = 0x4020;
-const CARTRIDGE_END: u16 = 0xFFFF;
-const CARTRIDGE_SIZE: usize = (CARTRIDGE_END - CARTRIDGE_START) as usize;
+const PRG_START: u16 = 0x8000;
+const PRG_END: u16 = 0xFFFF;
 
 pub struct Bus {
     cpu_vram: [u8; CPU_VRAM_SIZE],
     ppu: [u8; PPU_REGISTERS_SIZE],
     apu: [u8; APU_REGISTERS_SIZE],
-    cartridge: [u8; CARTRIDGE_SIZE],
+    pub rom: Option<Box<Rom>>,
 }
 
 impl Bus {
@@ -57,7 +58,7 @@ impl Bus {
             cpu_vram: [0; CPU_VRAM_SIZE],
             ppu: [0; PPU_REGISTERS_SIZE],
             apu: [0; APU_REGISTERS_SIZE],
-            cartridge: [0; CARTRIDGE_SIZE],
+            rom: None,
         }
     }
 }
@@ -81,6 +82,20 @@ pub trait Mem {
     }
 }
 
+impl Bus {
+    fn read_prg_rom(&self, mut addr: u16) -> u8 {
+        if let Some(rom) = &self.rom {
+            addr -= PRG_START;
+            if rom.prg_rom.len() == 0x4000 && addr >= 0x4000 {
+                addr %= 0x4000;
+            }
+            rom.prg_rom[addr as usize]
+        } else {
+            0xFF
+        }
+    }
+}
+
 impl Mem for Bus {
     fn mem_read(&self, addr: u16) -> u8 {
         match addr {
@@ -89,13 +104,17 @@ impl Mem for Bus {
                 self.cpu_vram[mirror_down_addr as usize]
             }
             PPU_REGISTERS_START..=PPU_REGISTERS_MIRRORS_END => {
-                let mirror_down_addr = addr & PPU_REGISTERS_MIRRORS_MASK;
+                let _mirror_down_addr = addr & PPU_REGISTERS_MIRRORS_MASK;
                 todo!("PPU is not supported yet")
             }
             APU_REGISTERS_START..=APU_REGISTERS_END => {
                 todo!("APU is not supported yet")
             }
-            CARTRIDGE_START..=CARTRIDGE_END => self.cartridge[(addr - CARTRIDGE_START) as usize],
+            PRG_START..=PRG_END => self.read_prg_rom(addr),
+            _ => {
+                println!("WARN: Ignoring read 0x{:X}", addr);
+                0x00
+            }
         }
     }
 
@@ -108,8 +127,8 @@ impl Mem for Bus {
             PPU_REGISTERS_START..=PPU_REGISTERS_MIRRORS_END => {
                 todo!("PPU is not supported yet")
             }
-            CARTRIDGE_START..=CARTRIDGE_END => {
-                self.cartridge[(addr - CARTRIDGE_START) as usize] = value
+            PRG_START..=PRG_END => {
+                panic!("Attempt to write to Cartridge ROM space")
             }
             _ => {
                 println!("WARN: Ignoring write 0x{:X} = 0x{:X}", addr, value);
@@ -168,14 +187,15 @@ mod tests {
     }
 
     #[test]
-    fn test_cartridge_read_write() {
+    fn test_cartridge_read() {
         let mut bus = Bus::new();
-        bus.mem_write(CARTRIDGE_START + 0x800, 0xAB);
-        assert_eq!(bus.mem_read(CARTRIDGE_START + 0x800), 0xAB);
+        bus.rom = Some(Box::from(crate::rom::test::create_example_rom()));
+        assert_eq!(bus.mem_read(PRG_START + 0x800), 0x01);
     }
 
     #[test]
-    fn test_can_write_reset_vector() {
+    #[should_panic(expected = "Attempt to write to Cartridge ROM space")]
+    fn test_cannot_write_to_cartridge() {
         let mut bus = Bus::new();
         bus.mem_write_u16(0xFFFC, 0x1234);
         assert_eq!(bus.mem_read_u16(0xFFFC), 0x1234);
