@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 #[allow(non_camel_case_types)]
 pub enum AddressingMode {
     Immediate,
@@ -14,6 +14,11 @@ pub enum AddressingMode {
     Indirect_X,
     Indirect_Y,
     NoneAddressing,
+    Accumulator,
+}
+
+pub fn is_addressing_accumulator(mode: AddressingMode) -> bool {
+    matches!(mode, AddressingMode::Accumulator)
 }
 
 #[derive(Debug)]
@@ -116,7 +121,7 @@ lazy_static! {
         OpCode::new(0x21, Instruction::AND, 2, 6, AddressingMode::Indirect_X),
         OpCode::new(0x31, Instruction::AND, 2, 5, AddressingMode::Indirect_Y),
 
-        OpCode::new(0x0A, Instruction::ASL, 1, 2, AddressingMode::NoneAddressing),
+        OpCode::new(0x0A, Instruction::ASL, 1, 2, AddressingMode::Accumulator),
         OpCode::new(0x06, Instruction::ASL, 2, 5, AddressingMode::ZeroPage),
         OpCode::new(0x16, Instruction::ASL, 2, 6, AddressingMode::ZeroPage_X),
         OpCode::new(0x0E, Instruction::ASL, 3, 6, AddressingMode::Absolute),
@@ -205,7 +210,7 @@ lazy_static! {
         OpCode::new(0xAC, Instruction::LDY, 3, 4, AddressingMode::Absolute),
         OpCode::new(0xBC, Instruction::LDY, 3, 4 /* +1 on page cross */, AddressingMode::Absolute_X),
 
-        OpCode::new(0x4A, Instruction::LSR, 1, 2, AddressingMode::NoneAddressing),
+        OpCode::new(0x4A, Instruction::LSR, 1, 2, AddressingMode::Accumulator),
         OpCode::new(0x46, Instruction::LSR, 2, 5, AddressingMode::ZeroPage),
         OpCode::new(0x56, Instruction::LSR, 2, 6, AddressingMode::ZeroPage_X),
         OpCode::new(0x4E, Instruction::LSR, 3, 6, AddressingMode::Absolute),

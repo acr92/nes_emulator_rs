@@ -28,6 +28,7 @@ bitflags! {
 pub const STACK: u16 = 0x0100;
 pub const STACK_RESET: u8 = 0xFD;
 
+#[derive(Clone, Copy)]
 pub enum RegisterField {
     A,
     X,
@@ -56,7 +57,7 @@ impl Register {
         }
     }
 
-    pub fn read(&self, field: &RegisterField) -> u8 {
+    pub fn read(&self, field: RegisterField) -> u8 {
         match field {
             RegisterField::A => self.a,
             RegisterField::X => self.x,
@@ -65,7 +66,7 @@ impl Register {
         }
     }
 
-    pub fn write(&mut self, field: &RegisterField, value: u8) {
+    pub fn write(&mut self, field: RegisterField, value: u8) {
         match field {
             RegisterField::A => self.a = value,
             RegisterField::X => self.x = value,

@@ -1,5 +1,5 @@
 use crate::opcodes;
-use crate::opcodes::{AddressingMode, Instruction};
+use crate::opcodes::{AddressingMode, Instruction, is_addressing_accumulator};
 use crate::register::{CpuFlags, Register, RegisterField};
 
 pub struct CPU {
@@ -79,7 +79,8 @@ impl CPU {
 
                 Instruction::ADC => self.adc(&opcode.mode),
                 Instruction::AND => self.and(&opcode.mode),
-                Instruction::ASL => self.asl(&opcode.mode),
+                Instruction::ASL if is_addressing_accumulator(opcode.mode) => self.asl_accumulator(),
+                Instruction::ASL => self.asl_memory(&opcode.mode),
                 Instruction::BIT => self.bit(&opcode.mode),
 
                 Instruction::CMP => self.compare(RegisterField::A, &opcode.mode),
@@ -96,7 +97,8 @@ impl CPU {
                 Instruction::LDA => self.load(RegisterField::A, &opcode.mode),
                 Instruction::LDX => self.load(RegisterField::X, &opcode.mode),
                 Instruction::LDY => self.load(RegisterField::Y, &opcode.mode),
-                Instruction::LSR => self.lsr(&opcode.mode),
+                Instruction::LSR if is_addressing_accumulator(opcode.mode) => self.lsr_accumulator(),
+                Instruction::LSR => self.lsr_memory(&opcode.mode),
 
                 Instruction::CLC => self.register.status.remove(CpuFlags::CARRY),
                 Instruction::CLD => self.register.status.remove(CpuFlags::DECIMAL_MODE),
@@ -129,24 +131,24 @@ impl CPU {
     }
 
     fn transfer(&mut self, source: RegisterField, target: RegisterField) {
-        self.register.write(&target, self.register.read(&source));
+        self.register.write(target, self.register.read(source));
     }
 
     fn load(&mut self, target: RegisterField, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
 
-        self.register.write(&target, value);
+        self.register.write(target, value);
     }
 
     fn increment(&mut self, target: RegisterField) {
-        let value = self.register.read(&target).wrapping_add(1);
-        self.register.write(&target, value);
+        let value = self.register.read(target).wrapping_add(1);
+        self.register.write(target, value);
     }
 
     fn decrement_register(&mut self, target: RegisterField) {
-        let value = self.register.read(&target).wrapping_sub(1);
-        self.register.write(&target, value);
+        let value = self.register.read(target).wrapping_sub(1);
+        self.register.write(target, value);
     }
 
     fn decrement_memory(&mut self, mode: &AddressingMode) {
@@ -161,13 +163,13 @@ impl CPU {
 
     fn store(&mut self, source: RegisterField, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
-        self.mem_write(addr, self.register.read(&source))
+        self.mem_write(addr, self.register.read(source))
     }
 
     fn compare(&mut self, source: RegisterField, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
 
-        let lhs = self.register.read(&source);
+        let lhs = self.register.read(source);
         let rhs = self.mem_read(addr);
 
         let result = lhs.wrapping_sub(rhs);
@@ -180,7 +182,7 @@ impl CPU {
     fn adc(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let data = self.mem_read(addr);
-        let a = self.register.read(&RegisterField::A);
+        let a = self.register.read(RegisterField::A);
         let carry = if self.register.status.contains(CpuFlags::CARRY) {
             1
         } else {
@@ -196,56 +198,58 @@ impl CPU {
             CpuFlags::OVERFLOW,
             (data ^ result) & (result ^ a) & 0x80 != 0,
         );
-        self.register.write(&RegisterField::A, result);
+        self.register.write(RegisterField::A, result);
     }
 
     fn and(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
-        let value = self.register.read(&RegisterField::A) & self.mem_read(addr);
-        self.register.write(&RegisterField::A, value);
+        let value = self.register.read(RegisterField::A) & self.mem_read(addr);
+        self.register.write(RegisterField::A, value);
     }
 
-    fn asl(&mut self, mode: &AddressingMode) {
-        let (mut data, addr) = if let AddressingMode::NoneAddressing = mode {
-            (self.register.read(&RegisterField::A), 0x00)
-        } else {
-            let addr = self.get_operand_address(mode);
-            (self.mem_read(addr), addr)
-        };
+    fn asl_accumulator(&mut self) {
+        let mut data = self.register.read(RegisterField::A);
 
         self.register.status.set(CpuFlags::CARRY, data >> 7 == 1);
         data <<= 1;
 
-        if let AddressingMode::NoneAddressing = mode {
-            self.register.write(&RegisterField::A, data);
-        } else {
-            self.mem_write(addr, data);
-            self.register.update_zero_and_negative_flags(data);
-        }
+        self.register.write(RegisterField::A, data);
     }
 
-    fn lsr(&mut self, mode: &AddressingMode) {
-        let (mut data, addr) = if let AddressingMode::NoneAddressing = mode {
-            (self.register.read(&RegisterField::A), 0x00)
-        } else {
-            let addr = self.get_operand_address(mode);
-            (self.mem_read(addr), addr)
-        };
+    fn asl_memory(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let mut data = self.mem_read(addr);
+
+        self.register.status.set(CpuFlags::CARRY, data >> 7 == 1);
+        data <<= 1;
+
+        self.mem_write(addr, data);
+        self.register.update_zero_and_negative_flags(data);
+    }
+
+    fn lsr_accumulator(&mut self) {
+        let mut data = self.register.read(RegisterField::A);
 
         self.register.status.set(CpuFlags::CARRY, data & 0x1 == 1);
         data >>= 1;
 
-        if let AddressingMode::NoneAddressing = mode {
-            self.register.write(&RegisterField::A, data);
-        } else {
-            self.mem_write(addr, data);
-            self.register.update_zero_and_negative_flags(data);
-        }
+        self.register.write(RegisterField::A, data);
+    }
+
+    fn lsr_memory(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let mut data = self.mem_read(addr);
+
+        self.register.status.set(CpuFlags::CARRY, data & 0x1 == 1);
+        data >>= 1;
+
+        self.mem_write(addr, data);
+        self.register.update_zero_and_negative_flags(data);
     }
 
     fn bit(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
-        let value = self.register.read(&RegisterField::A) & self.mem_read(addr);
+        let value = self.register.read(RegisterField::A) & self.mem_read(addr);
 
         self.register
             .status
@@ -263,33 +267,36 @@ impl CPU {
             AddressingMode::Absolute => self.mem_read_u16(self.register.pc),
             AddressingMode::ZeroPage_X => {
                 let pos = self.mem_read(self.register.pc);
-                let addr = pos.wrapping_add(self.register.read(&RegisterField::A)) as u16;
+                let addr = pos.wrapping_add(self.register.read(RegisterField::A)) as u16;
                 addr
             }
             AddressingMode::ZeroPage_Y => {
                 let pos = self.mem_read(self.register.pc);
-                let addr = pos.wrapping_add(self.register.read(&RegisterField::Y)) as u16;
+                let addr = pos.wrapping_add(self.register.read(RegisterField::Y)) as u16;
                 addr
             }
             AddressingMode::Absolute_X => {
                 let base = self.mem_read_u16(self.register.pc);
-                let addr = base.wrapping_add(self.register.read(&RegisterField::X) as u16) as u16;
+                let addr = base.wrapping_add(self.register.read(RegisterField::X) as u16) as u16;
                 addr
             }
             AddressingMode::Absolute_Y => {
                 let base = self.mem_read_u16(self.register.pc);
-                let addr = base.wrapping_add(self.register.read(&RegisterField::Y) as u16) as u16;
+                let addr = base.wrapping_add(self.register.read(RegisterField::Y) as u16) as u16;
                 addr
             }
             AddressingMode::Indirect_X => {
                 let base = self.mem_read(self.register.pc);
-                let ptr = base.wrapping_add(self.register.read(&RegisterField::X));
+                let ptr = base.wrapping_add(self.register.read(RegisterField::X));
                 self.mem_read_u16(ptr as u16)
             }
             AddressingMode::Indirect_Y => {
                 let base = self.mem_read(self.register.pc);
                 let deref_base = self.mem_read_u16(base as u16);
-                deref_base.wrapping_add(self.register.read(&RegisterField::Y) as u16)
+                deref_base.wrapping_add(self.register.read(RegisterField::Y) as u16)
+            }
+            AddressingMode::Accumulator => {
+                panic!("mode {:?} not supported", mode)
             }
             AddressingMode::NoneAddressing => {
                 panic!("mode {:?} not supported", mode)
@@ -307,7 +314,7 @@ mod test {
     fn test_0xa9_lda_immediate_load_data() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xa9, 0x05, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x05);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x05);
         assert_eq!(cpu.register.status.bits() & 0b0000_0010, 0b00);
         assert_eq!(cpu.register.status.bits() & 0b1000_0000, 0);
     }
@@ -324,7 +331,7 @@ mod test {
         let mut cpu = CPU::new();
         cpu.mem_write(0x10, 0x55);
         cpu.load_and_run(&[0xa5, 0x10, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x55);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x55);
         assert_eq!(cpu.register.status.bits() & 0b0000_0010, 0b00);
         assert_eq!(cpu.register.status.bits() & 0b1000_0000, 0);
     }
@@ -334,7 +341,7 @@ mod test {
         let mut cpu = CPU::new();
         cpu.mem_write(0x10, 0x00);
         cpu.load_and_run(&[0xa5, 0x10, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x00);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x00);
         assert_eq!(cpu.register.status.bits() & 0b0000_0010, 0b10);
     }
 
@@ -343,7 +350,7 @@ mod test {
         let mut cpu = CPU::new();
         cpu.mem_write_u16(0x1020, 0x55);
         cpu.load_and_run(&[0xad, 0x20, 0x10, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x55);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x55);
         assert_eq!(cpu.register.status.bits() & 0b0000_0010, 0b00);
         assert_eq!(cpu.register.status.bits() & 0b1000_0000, 0);
     }
@@ -353,7 +360,7 @@ mod test {
         let mut cpu = CPU::new();
         cpu.mem_write_u16(0x1020, 0x00);
         cpu.load_and_run(&[0xad, 0x20, 0x10, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x00);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x00);
         assert_eq!(cpu.register.status.bits() & 0b0000_0010, 0b10);
     }
 
@@ -361,21 +368,21 @@ mod test {
     fn test_5_ops_working_together() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xa9, 0xc0, 0xaa, 0xe8, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::X), 0xc1)
+        assert_eq!(cpu.register.read(RegisterField::X), 0xc1)
     }
 
     #[test]
     fn test_0xe8_inx_overflow() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xa9, 0xff, 0xaa, 0xe8, 0xe8, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::X), 1)
+        assert_eq!(cpu.register.read(RegisterField::X), 1)
     }
 
     #[test]
     fn test_0xc8_iny_overflow() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA0, 0xff, 0xaa, 0xC8, 0xC8, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::Y), 1)
+        assert_eq!(cpu.register.read(RegisterField::Y), 1)
     }
 
     #[test]
@@ -400,7 +407,7 @@ mod test {
     fn test_0xca_dex_underflow() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xCA, 0xCA, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::X), 254);
+        assert_eq!(cpu.register.read(RegisterField::X), 254);
         assert!(cpu.register.status.contains(CpuFlags::NEGATIVE));
     }
 
@@ -408,7 +415,7 @@ mod test {
     fn test_0x88_dey_underflow() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0x88, 0x88, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::Y), 254);
+        assert_eq!(cpu.register.read(RegisterField::Y), 254);
         assert!(cpu.register.status.contains(CpuFlags::NEGATIVE));
     }
 
@@ -416,7 +423,7 @@ mod test {
     fn test_0x85_sta_write_accum_to_memory() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA9, 0xBA, 0x85, 0xAA, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::A), 0xBA);
+        assert_eq!(cpu.register.read(RegisterField::A), 0xBA);
         assert_eq!(cpu.mem_read(0xAA), 0xBA);
     }
 
@@ -424,7 +431,7 @@ mod test {
     fn test_0x86_stx_write_x_reg_to_memory() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA2, 0xBA, 0x86, 0xAA, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::X), 0xBA);
+        assert_eq!(cpu.register.read(RegisterField::X), 0xBA);
         assert_eq!(cpu.mem_read(0xAA), 0xBA);
     }
 
@@ -432,7 +439,7 @@ mod test {
     fn test_0x84_sty_write_y_reg_to_memory() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA0, 0xBA, 0x84, 0xAA, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::Y), 0xBA);
+        assert_eq!(cpu.register.read(RegisterField::Y), 0xBA);
         assert_eq!(cpu.mem_read(0xAA), 0xBA);
     }
 
@@ -441,8 +448,8 @@ mod test {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xa9, 0x10, 0xaa, 0x00]);
         assert_eq!(
-            cpu.register.read(&RegisterField::X),
-            cpu.register.read(&RegisterField::A)
+            cpu.register.read(RegisterField::X),
+            cpu.register.read(RegisterField::A)
         );
     }
 
@@ -451,10 +458,10 @@ mod test {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xa2, 0x10, 0x8a, 0x00]);
         assert_eq!(
-            cpu.register.read(&RegisterField::A),
-            cpu.register.read(&RegisterField::X)
+            cpu.register.read(RegisterField::A),
+            cpu.register.read(RegisterField::X)
         );
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x10);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x10);
     }
 
     #[test]
@@ -462,17 +469,17 @@ mod test {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xa0, 0x10, 0x98, 0x00]);
         assert_eq!(
-            cpu.register.read(&RegisterField::Y),
-            cpu.register.read(&RegisterField::A)
+            cpu.register.read(RegisterField::Y),
+            cpu.register.read(RegisterField::A)
         );
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x10);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x10);
     }
 
     #[test]
     fn test_0xaa_txs_move_x_to_sp() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA2, 0x10, 0x9A, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::X), cpu.register.sp);
+        assert_eq!(cpu.register.read(RegisterField::X), cpu.register.sp);
         assert_eq!(cpu.register.sp, 0x10);
     }
 
@@ -480,7 +487,7 @@ mod test {
     fn test_0xaa_tsx_move_sp_to_x() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xBA, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::X), STACK_RESET);
+        assert_eq!(cpu.register.read(RegisterField::X), STACK_RESET);
     }
 
     #[test]
@@ -572,7 +579,7 @@ mod test {
         let mut cpu = CPU::new();
         // 0b1010_1010 & 0b0111 = 0b0000_0010 = 0x02
         cpu.load_and_run(&[0xA9, 0xAA, 0x29, 0x07, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x02);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x02);
     }
 
     #[test]
@@ -581,14 +588,14 @@ mod test {
         cpu.mem_write(0x1234, 0x07);
         // 0b1010_1010 & 0b0111 = 0b0000_0010 = 0x02
         cpu.load_and_run(&[0xA9, 0xAA, 0x2D, 0x34, 0x12, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x02);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x02);
     }
 
     #[test]
     fn test_0x69_adc_no_overflow_no_carry() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA9, 0x02, 0x69, 0x02, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x04);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x04);
         assert!(!cpu.register.status.contains(CpuFlags::ZERO));
         assert!(!cpu.register.status.contains(CpuFlags::OVERFLOW));
         assert!(!cpu.register.status.contains(CpuFlags::CARRY));
@@ -599,7 +606,7 @@ mod test {
     fn test_0x69_adc_overflow_carry_bit_set() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA9, 0xFF, 0x69, 0x02, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x01);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x01);
         assert!(!cpu.register.status.contains(CpuFlags::ZERO));
         assert!(!cpu.register.status.contains(CpuFlags::OVERFLOW));
         assert!(cpu.register.status.contains(CpuFlags::CARRY));
@@ -610,7 +617,7 @@ mod test {
     fn test_0x69_adc_zero() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA9, 0xFF, 0x69, 0x01, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x00);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x00);
         assert!(cpu.register.status.contains(CpuFlags::ZERO));
         assert!(!cpu.register.status.contains(CpuFlags::OVERFLOW));
         assert!(cpu.register.status.contains(CpuFlags::CARRY));
@@ -621,7 +628,7 @@ mod test {
     fn test_0x69_adc_sign_bit_incorrect() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA9, 0x80, 0x69, 0x80, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x00);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x00);
         assert!(cpu.register.status.contains(CpuFlags::ZERO));
         assert!(cpu.register.status.contains(CpuFlags::OVERFLOW));
         assert!(cpu.register.status.contains(CpuFlags::CARRY));
@@ -632,7 +639,7 @@ mod test {
     fn test_0x0a_asl_carry() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA9, 0x81, 0x0A, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x02);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x02);
         assert!(cpu.register.status.contains(CpuFlags::CARRY));
     }
 
@@ -640,7 +647,7 @@ mod test {
     fn test_0x0a_asl_no_carry() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA9, 0x41, 0x0A, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x82);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x82);
         assert!(!cpu.register.status.contains(CpuFlags::CARRY));
     }
 
@@ -650,7 +657,7 @@ mod test {
         cpu.mem_write(0x40, 0x81);
         cpu.load_and_run(&[0x06, 0x40, 0x00]);
         assert_eq!(cpu.mem_read(0x40), 0x02);
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x00);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x00);
         assert!(cpu.register.status.contains(CpuFlags::CARRY));
     }
 
@@ -658,7 +665,7 @@ mod test {
     fn test_0x4a_lsr_carry() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA9, 0x81, 0x4A, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x40);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x40);
         assert!(cpu.register.status.contains(CpuFlags::CARRY));
     }
 
@@ -666,7 +673,7 @@ mod test {
     fn test_0x4a_lsr_no_carry() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA9, 0x40, 0x4A, 0x00]);
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x20);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x20);
         assert!(!cpu.register.status.contains(CpuFlags::CARRY));
     }
 
@@ -676,7 +683,7 @@ mod test {
         cpu.mem_write(0x40, 0x81);
         cpu.load_and_run(&[0x46, 0x40, 0x00]);
         assert_eq!(cpu.mem_read(0x40), 0x40);
-        assert_eq!(cpu.register.read(&RegisterField::A), 0x00);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x00);
         assert!(cpu.register.status.contains(CpuFlags::CARRY));
     }
 
