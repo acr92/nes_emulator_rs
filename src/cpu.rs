@@ -124,6 +124,12 @@ impl CPU {
                 Instruction::JSR => self.jsr(),
                 Instruction::RTS => self.rts(),
 
+                // Stack
+                Instruction::PHA => self.stack_push(self.register.read(RegisterField::A)),
+                Instruction::PHP => self.stack_push(self.register.status.bits()),
+                Instruction::PLA => self.stack_pull_into(RegisterField::A),
+                Instruction::PLP => self.stack_pull_into(RegisterField::STATUS),
+
                 // Compare Operations
                 Instruction::CMP => self.compare(RegisterField::A, &opcode.mode),
                 Instruction::CPX => self.compare(RegisterField::X, &opcode.mode),
@@ -261,6 +267,11 @@ impl CPU {
         let hi = self.stack_pop() as u16;
 
         hi << 8 | lo
+    }
+
+    fn stack_pull_into(&mut self, field: RegisterField) {
+        let value = self.stack_pop();
+        self.register.write(field, value);
     }
 
     fn adc(&mut self, mode: &AddressingMode) {
@@ -1066,6 +1077,73 @@ mod test {
         assert_eq!(cpu.stack_pop_u16(), 0xCCDD);
         assert_eq!(cpu.stack_pop_u16(), 0xAABB);
         assert_eq!(cpu.stack_pop_u16(), 0xCAFE);
+    }
+
+    #[test]
+    fn test_0x48_pha() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA9, 0x20, 0x48, 0x00]);
+        assert_eq!(cpu.stack_pop(), 0x20);
+    }
+
+    #[test]
+    fn test_0x08_php() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0x08, 0x00]);
+        assert_eq!(cpu.stack_pop(), 0b100100);
+    }
+
+    #[test]
+    fn test_0x68_pla() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA9, 0x20, 0x48, 0xA9, 0x30, 0x68, 0x00]);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x20);
+    }
+
+    #[test]
+    fn test_0x28_plp() {
+        let mut cpu = CPU::new();
+        /*
+           SEC
+           PHP
+           SEI
+           PLP
+        */
+        cpu.load_and_run(&[0x38, 0x08, 0x78, 0x28, 0x00]);
+        assert_eq!(cpu.register.status.bits(), 0b100101);
+    }
+
+    #[test]
+    fn test_stack_program_multiple_loops() {
+        /*
+          LDX #$00
+          LDY #$00
+        firstloop:
+          TXA
+          STA $0200,Y
+          PHA
+          INX
+          INY
+          CPY #$10
+          BNE firstloop ;loop until Y is $10
+        secondloop:
+          PLA
+          STA $0200,Y
+          INY
+          CPY #$20      ;loop until Y is $20
+          BNE secondloop
+         */
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[
+            0xA2, 0x00, 0xA0, 0x00, 0x8A, 0x99, 0x00, 0x02, 0x48, 0xE8, 0xC8, 0xC0, 0x10, 0xD0,
+            0xF5, 0x68, 0x99, 0x00, 0x02, 0xC8, 0xC0, 0x20, 0xD0, 0xF7,
+        ]);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x00);
+        assert_eq!(cpu.register.read(RegisterField::X), 0x10);
+        assert_eq!(cpu.register.read(RegisterField::Y), 0x20);
+        assert_eq!(cpu.mem_read(0x0200), 0x00);
+        assert_eq!(cpu.mem_read(0x0201), 0x01);
+        assert_eq!(cpu.mem_read(0x0210), 0x0F);
     }
 
     #[test]

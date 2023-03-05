@@ -34,6 +34,7 @@ pub enum RegisterField {
     X,
     Y,
     SP,
+    STATUS,
 }
 
 pub struct Register {
@@ -63,6 +64,7 @@ impl Register {
             RegisterField::X => self.x,
             RegisterField::Y => self.y,
             RegisterField::SP => self.sp,
+            RegisterField::STATUS => self.status.bits,
         }
     }
 
@@ -72,6 +74,7 @@ impl Register {
             RegisterField::X => self.x = value,
             RegisterField::Y => self.y = value,
             RegisterField::SP => self.sp = value,
+            RegisterField::STATUS => self.status.bits = value,
         }
 
         match field {
