@@ -1406,4 +1406,10 @@ mod test {
 
         assert_eq!(cpu.get_operand_address(&AddressingMode::Indirect_Y), 0x2005);
     }
+
+    #[test]
+    #[should_panic]
+    fn test_get_operand_address_invalid_mode_should_panic() {
+        CPU::new().get_operand_address(&AddressingMode::Accumulator);
+    }
 }
