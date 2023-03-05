@@ -56,7 +56,7 @@ impl Rom {
 
 #[cfg(test)]
 pub mod test {
-    use crate::rom::{Mirroring, Rom, CHR_ROM_PAGE_SIZE, PRG_ROM_PAGE_SIZE};
+    use crate::cartridge::{Mirroring, Rom, CHR_ROM_PAGE_SIZE, PRG_ROM_PAGE_SIZE};
 
     struct TestRom {
         header: Vec<u8>,

@@ -22,6 +22,7 @@ The emulator exists as a learning project, and will deviate from the e-book to e
 
 - [Writing NES Emulator in Rust](https://bugzmanov.github.io/nes_ebook)
 - [Easy 6502](https://skilldrick.github.io/easy6502/)
+- [NesDev](https://www.nesdev.org)
 
 ## Contributing
 

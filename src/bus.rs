@@ -26,7 +26,7 @@
 // | Zero Page     |       |               |
 // |_______________| $0000 |_______________|
 
-use crate::rom::Rom;
+use crate::cartridge::Rom;
 
 const CPU_VRAM_SIZE: usize = 0x800;
 const RAM_START: u16 = 0x0000;
@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn test_cartridge_read() {
         let mut bus = Bus::new();
-        bus.rom = Some(Box::from(crate::rom::test::create_example_rom()));
+        bus.rom = Some(Box::from(crate::cartridge::test::create_example_rom()));
         assert_eq!(bus.mem_read(PRG_START + 0x800), 0x01);
     }
 

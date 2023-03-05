@@ -1,5 +1,5 @@
 use crate::cpu::CPU;
-use crate::rom::Rom;
+use crate::cartridge::Rom;
 use bus::Mem;
 use rand::Rng;
 use sdl2::event::Event;
@@ -7,12 +7,13 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::EventPump;
 use std::env;
+use crate::bus::Bus;
 
 mod bus;
 mod cpu;
 mod opcodes;
 mod register;
-mod rom;
+mod cartridge;
 
 fn handle_user_input(cpu: &mut CPU, event_pump: &mut EventPump) {
     for event in event_pump.poll_iter() {
@@ -95,8 +96,9 @@ fn main() {
     let program = std::fs::read(filename).unwrap();
     let rom = Rom::new(&program).unwrap();
 
-    let mut cpu = CPU::new();
-    cpu.bus.rom = Some(Box::from(rom));
+    let mut bus = Bus::new();
+    bus.rom = Some(Box::from(rom));
+    let mut cpu = CPU::new(bus);
     cpu.reset();
 
     let sdl_context = sdl2::init().unwrap();
