@@ -1,5 +1,5 @@
 use crate::opcodes;
-use crate::opcodes::{AddressingMode, Instruction, is_addressing_accumulator};
+use crate::opcodes::{is_addressing_accumulator, AddressingMode, Instruction};
 use crate::register::{CpuFlags, Register, RegisterField};
 
 pub struct CPU {
@@ -77,29 +77,30 @@ impl CPU {
                 }
                 Instruction::NOP => {}
 
+                // Logical Operations
+                Instruction::AND => self.logic(&opcode.mode, |a, b| a & b),
+                Instruction::EOR => self.logic(&opcode.mode, |a, b| a ^ b),
+                Instruction::ORA => self.logic(&opcode.mode, |a, b| a | b),
+
+                // Arithmetic Operations
                 Instruction::ADC => self.adc(&opcode.mode),
-                Instruction::AND => self.and(&opcode.mode),
-                Instruction::ASL if is_addressing_accumulator(opcode.mode) => self.asl_accumulator(),
+                Instruction::ASL if is_addressing_accumulator(opcode.mode) => {
+                    self.asl_accumulator()
+                }
                 Instruction::ASL => self.asl_memory(&opcode.mode),
                 Instruction::BIT => self.bit(&opcode.mode),
+                Instruction::DEC => self.decrement_memory(&opcode.mode),
+                Instruction::DEX => self.decrement_register(RegisterField::X),
+                Instruction::DEY => self.decrement_register(RegisterField::Y),
+                Instruction::INX => self.increment(RegisterField::X),
+                Instruction::INY => self.increment(RegisterField::Y),
 
+                // Compare Operations
                 Instruction::CMP => self.compare(RegisterField::A, &opcode.mode),
                 Instruction::CPX => self.compare(RegisterField::X, &opcode.mode),
                 Instruction::CPY => self.compare(RegisterField::Y, &opcode.mode),
 
-                Instruction::DEC => self.decrement_memory(&opcode.mode),
-                Instruction::DEX => self.decrement_register(RegisterField::X),
-                Instruction::DEY => self.decrement_register(RegisterField::Y),
-
-                Instruction::INX => self.increment(RegisterField::X),
-                Instruction::INY => self.increment(RegisterField::Y),
-
-                Instruction::LDA => self.load(RegisterField::A, &opcode.mode),
-                Instruction::LDX => self.load(RegisterField::X, &opcode.mode),
-                Instruction::LDY => self.load(RegisterField::Y, &opcode.mode),
-                Instruction::LSR if is_addressing_accumulator(opcode.mode) => self.lsr_accumulator(),
-                Instruction::LSR => self.lsr_memory(&opcode.mode),
-
+                // Clear & Set Registers
                 Instruction::CLC => self.register.status.remove(CpuFlags::CARRY),
                 Instruction::CLD => self.register.status.remove(CpuFlags::DECIMAL_MODE),
                 Instruction::CLI => self.register.status.remove(CpuFlags::INTERRUPT_DISABLE),
@@ -108,10 +109,21 @@ impl CPU {
                 Instruction::SED => self.register.status.insert(CpuFlags::DECIMAL_MODE),
                 Instruction::SEI => self.register.status.insert(CpuFlags::INTERRUPT_DISABLE),
 
+                // Load Operations
+                Instruction::LDA => self.load(RegisterField::A, &opcode.mode),
+                Instruction::LDX => self.load(RegisterField::X, &opcode.mode),
+                Instruction::LDY => self.load(RegisterField::Y, &opcode.mode),
+                Instruction::LSR if is_addressing_accumulator(opcode.mode) => {
+                    self.lsr_accumulator()
+                }
+                Instruction::LSR => self.lsr_memory(&opcode.mode),
+
+                // Store Operations
                 Instruction::STA => self.store(RegisterField::A, &opcode.mode),
                 Instruction::STX => self.store(RegisterField::X, &opcode.mode),
                 Instruction::STY => self.store(RegisterField::Y, &opcode.mode),
 
+                // Transfer Operations
                 Instruction::TAX => self.transfer(RegisterField::A, RegisterField::X),
                 Instruction::TAY => self.transfer(RegisterField::A, RegisterField::Y),
                 Instruction::TSX => self.transfer(RegisterField::SP, RegisterField::X),
@@ -179,6 +191,15 @@ impl CPU {
         self.register.status.set(CpuFlags::NEGATIVE, result >= 0x80);
     }
 
+    fn logic<F>(&mut self, mode: &AddressingMode, op: F)
+    where
+        F: Fn(u8, u8) -> u8,
+    {
+        let addr = self.get_operand_address(mode);
+        let value = op(self.register.read(RegisterField::A), self.mem_read(addr));
+        self.register.write(RegisterField::A, value);
+    }
+
     fn adc(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let data = self.mem_read(addr);
@@ -199,12 +220,6 @@ impl CPU {
             (data ^ result) & (result ^ a) & 0x80 != 0,
         );
         self.register.write(RegisterField::A, result);
-    }
-
-    fn and(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
-        let value = self.register.read(RegisterField::A) & self.mem_read(addr);
-        self.register.write(RegisterField::A, value);
     }
 
     fn asl_accumulator(&mut self) {
@@ -589,6 +604,40 @@ mod test {
         // 0b1010_1010 & 0b0111 = 0b0000_0010 = 0x02
         cpu.load_and_run(&[0xA9, 0xAA, 0x2D, 0x34, 0x12, 0x00]);
         assert_eq!(cpu.register.read(RegisterField::A), 0x02);
+    }
+
+    #[test]
+    fn test_0x49_eor_exclusive_or_on_immediate() {
+        let mut cpu = CPU::new();
+        // 0b1010_1010 ^ 0b0111 = 0b1010_1101 = 0xAD
+        cpu.load_and_run(&[0xA9, 0xAA, 0x49, 0x07, 0x00]);
+        assert_eq!(cpu.register.read(RegisterField::A), 0xAD);
+    }
+
+    #[test]
+    fn test_0x5d_eor_exclusive_or_on_absolute() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x1234, 0x07);
+        // 0b1010_1010 ^ 0b0111 = 0b1010_1101 = 0xAD
+        cpu.load_and_run(&[0xA9, 0xAA, 0x5D, 0x34, 0x12, 0x00]);
+        assert_eq!(cpu.register.read(RegisterField::A), 0xAD);
+    }
+
+    #[test]
+    fn test_0x09_ora_logical_eor_on_immediate() {
+        let mut cpu = CPU::new();
+        // 0b1010_1010 | 0b0111 = 0b1010_1101 = 0xAF
+        cpu.load_and_run(&[0xA9, 0xAA, 0x09, 0x07, 0x00]);
+        assert_eq!(cpu.register.read(RegisterField::A), 0xAF);
+    }
+
+    #[test]
+    fn test_0x0d_ora_exclusive_or_on_absolute() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x1234, 0x07);
+        // 0b1010_1010 | 0b0111 = 0b1010_1101 = 0xAF
+        cpu.load_and_run(&[0xA9, 0xAA, 0x0D, 0x34, 0x12, 0x00]);
+        assert_eq!(cpu.register.read(RegisterField::A), 0xAF);
     }
 
     #[test]
