@@ -1,38 +1,21 @@
+use crate::bus::Bus;
+use crate::bus::Mem;
 use crate::opcodes;
 use crate::opcodes::{is_addressing_absolute, AddressingMode, Instruction};
 use crate::register::{CpuFlags, Register, RegisterField, STACK};
 
 pub struct CPU {
     pub register: Register,
-    memory: [u8; 0xFFFF],
-}
-
-pub trait Mem {
-    fn mem_read(&self, addr: u16) -> u8;
-
-    fn mem_write(&mut self, addr: u16, value: u8);
-
-    fn mem_read_u16(&self, addr: u16) -> u16 {
-        let lo = self.mem_read(addr) as u16;
-        let hi = self.mem_read(addr.wrapping_add(1)) as u16;
-        (hi << 8) | (lo as u16)
-    }
-
-    fn mem_write_u16(&mut self, addr: u16, value: u16) {
-        let hi = (value >> 8) as u8;
-        let lo = (value & 0xFF) as u8;
-        self.mem_write(addr, lo);
-        self.mem_write(addr.wrapping_add(1), hi);
-    }
+    pub bus: Bus,
 }
 
 impl Mem for CPU {
     fn mem_read(&self, addr: u16) -> u8 {
-        self.memory[addr as usize]
+        self.bus.mem_read(addr)
     }
 
     fn mem_write(&mut self, addr: u16, value: u8) {
-        self.memory[addr as usize] = value;
+        self.bus.mem_write(addr, value)
     }
 }
 
@@ -40,7 +23,7 @@ impl CPU {
     pub fn new() -> Self {
         CPU {
             register: Register::new(),
-            memory: [0; 0xFFFF],
+            bus: Bus::new(),
         }
     }
 
@@ -51,13 +34,15 @@ impl CPU {
 
     #[cfg(test)]
     fn load_and_run(&mut self, program: &[u8]) {
-        self.load_program_into_memory(program, 0x8000);
+        self.load_program_into_memory(program, 0x0600);
         self.reset();
         self.run()
     }
 
     pub fn load_program_into_memory(&mut self, program: &[u8], base: usize) {
-        self.memory[base..(base + program.len())].copy_from_slice(program);
+        for (pos, &e) in program.iter().enumerate() {
+            self.mem_write((base + pos) as u16, e)
+        }
         self.mem_write_u16(0xFFFC, base as u16);
     }
 
@@ -504,7 +489,8 @@ fn ror(data: u8, carry: bool) -> (u8, bool) {
 
 #[cfg(test)]
 mod test {
-    use crate::cpu::{CpuFlags, Mem, CPU};
+    use crate::bus::Mem;
+    use crate::cpu::{CpuFlags, CPU};
     use crate::opcodes;
     use crate::opcodes::AddressingMode;
     use crate::register::{RegisterField, STACK_RESET};
@@ -1175,7 +1161,7 @@ mod test {
     fn test_0x4c_jmp_absolute() {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[
-            0xA9, 0x03, 0x4C, 0x08, 0x80, 0x00, 0x00, 0x00, 0x8D, 0x00, 0x02,
+            0xA9, 0x03, 0x4C, 0x08, 0x06, 0x00, 0x00, 0x00, 0x8D, 0x00, 0x02,
         ]);
         assert_eq!(cpu.register.read(RegisterField::A), 0x03);
         assert_eq!(cpu.mem_read(0x0200), 0x03);
@@ -1184,7 +1170,7 @@ mod test {
     #[test]
     fn test_0x6c_jmp_indirect() {
         let mut cpu = CPU::new();
-        cpu.mem_write_u16(0x0610, 0x8008);
+        cpu.mem_write_u16(0x0610, 0x0608);
         cpu.load_and_run(&[
             0xA9, 0x03, 0x6C, 0x10, 0x06, 0x00, 0x00, 0x00, 0x8D, 0x00, 0x02,
         ]);
@@ -1195,10 +1181,10 @@ mod test {
     #[test]
     fn test_0x6c_jmp_indirect_6502_bug() {
         let mut cpu = CPU::new();
-        cpu.mem_write(0x06FF, 0x08);
-        cpu.mem_write(0x0600, 0x80);
+        cpu.mem_write(0x08FF, 0x08);
+        cpu.mem_write(0x0800, 0x06);
         cpu.load_and_run(&[
-            0xA9, 0x03, 0x6C, 0xFF, 0x06, 0x00, 0x00, 0x00, 0x8D, 0x00, 0x02,
+            0xA9, 0x03, 0x6C, 0xFF, 0x08, 0x00, 0x00, 0x00, 0x8D, 0x00, 0x02,
         ]);
         assert_eq!(cpu.register.read(RegisterField::A), 0x03);
         assert_eq!(cpu.mem_read(0x0200), 0x03);
@@ -1227,7 +1213,7 @@ mod test {
          */
         let mut cpu = CPU::new();
         cpu.load_and_run(&[
-            0x20, 0x10, 0x80, 0x20, 0x0A, 0x80, 0x20, 0x09, 0x80, 0x00, 0xE8, 0xE0, 0x05, 0xD0,
+            0x20, 0x10, 0x06, 0x20, 0x0A, 0x06, 0x20, 0x09, 0x06, 0x00, 0xE8, 0xE0, 0x05, 0xD0,
             0xFB, 0x60, 0xA2, 0x00, 0x60,
         ]);
         assert_eq!(cpu.register.read(RegisterField::X), 0x05);

@@ -1,10 +1,12 @@
-use crate::cpu::{Mem, CPU};
+use crate::cpu::CPU;
+use bus::Mem;
 use rand::Rng;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::EventPump;
 
+mod bus;
 mod cpu;
 mod opcodes;
 mod register;
