@@ -17,10 +17,6 @@ pub enum AddressingMode {
     Accumulator,
 }
 
-pub fn is_addressing_accumulator(mode: AddressingMode) -> bool {
-    matches!(mode, AddressingMode::Accumulator)
-}
-
 pub fn is_addressing_absolute(mode: AddressingMode) -> bool {
     matches!(mode, AddressingMode::Absolute)
 }
@@ -236,13 +232,13 @@ lazy_static! {
         OpCode::new(0x68, Instruction::PLA, 1, 4, AddressingMode::NoneAddressing),
         OpCode::new(0x28, Instruction::PLP, 1, 4, AddressingMode::NoneAddressing),
 
-        OpCode::new(0x2A, Instruction::ROL, 1, 2, AddressingMode::NoneAddressing),
+        OpCode::new(0x2A, Instruction::ROL, 1, 2, AddressingMode::Accumulator),
         OpCode::new(0x26, Instruction::ROL, 2, 5, AddressingMode::ZeroPage),
         OpCode::new(0x36, Instruction::ROL, 2, 6, AddressingMode::ZeroPage_X),
         OpCode::new(0x2E, Instruction::ROL, 3, 6, AddressingMode::Absolute),
         OpCode::new(0x3E, Instruction::ROL, 3, 7, AddressingMode::Absolute_X),
 
-        OpCode::new(0x6A, Instruction::ROR, 1, 2, AddressingMode::NoneAddressing),
+        OpCode::new(0x6A, Instruction::ROR, 1, 2, AddressingMode::Accumulator),
         OpCode::new(0x66, Instruction::ROR, 2, 5, AddressingMode::ZeroPage),
         OpCode::new(0x76, Instruction::ROR, 2, 6, AddressingMode::ZeroPage_X),
         OpCode::new(0x6E, Instruction::ROR, 3, 6, AddressingMode::Absolute),

@@ -1,7 +1,5 @@
 use crate::opcodes;
-use crate::opcodes::{
-    is_addressing_absolute, is_addressing_accumulator, AddressingMode, Instruction,
-};
+use crate::opcodes::{is_addressing_absolute, AddressingMode, Instruction};
 use crate::register::{CpuFlags, Register, RegisterField, STACK};
 
 pub struct CPU {
@@ -92,10 +90,7 @@ impl CPU {
 
                 // Arithmetic Operations
                 Instruction::ADC => self.adc(&opcode.mode),
-                Instruction::ASL if is_addressing_accumulator(opcode.mode) => {
-                    self.asl_accumulator()
-                }
-                Instruction::ASL => self.asl_memory(&opcode.mode),
+                Instruction::ASL => self.arithmetic_shift(&opcode.mode, asl),
                 Instruction::BIT => self.bit(&opcode.mode),
                 Instruction::DEC => self.decrement_memory(&opcode.mode),
                 Instruction::DEX => self.decrement_register(RegisterField::X),
@@ -103,6 +98,9 @@ impl CPU {
                 Instruction::INC => self.increment_memory(&opcode.mode),
                 Instruction::INX => self.increment_register(RegisterField::X),
                 Instruction::INY => self.increment_register(RegisterField::Y),
+                Instruction::LSR => self.arithmetic_shift(&opcode.mode, lsr),
+                Instruction::ROL => self.arithmetic_shift(&opcode.mode, rol),
+                Instruction::ROR => self.arithmetic_shift(&opcode.mode, ror),
 
                 // Branch Operations
                 Instruction::BCC => self.branch(!self.register.status.contains(CpuFlags::CARRY)),
@@ -148,10 +146,6 @@ impl CPU {
                 Instruction::LDA => self.load(RegisterField::A, &opcode.mode),
                 Instruction::LDX => self.load(RegisterField::X, &opcode.mode),
                 Instruction::LDY => self.load(RegisterField::Y, &opcode.mode),
-                Instruction::LSR if is_addressing_accumulator(opcode.mode) => {
-                    self.lsr_accumulator()
-                }
-                Instruction::LSR => self.lsr_memory(&opcode.mode),
 
                 // Store Operations
                 Instruction::STA => self.store(RegisterField::A, &opcode.mode),
@@ -296,41 +290,40 @@ impl CPU {
         self.register.write(RegisterField::A, result);
     }
 
-    fn asl_accumulator(&mut self) {
-        let mut data = self.register.read(RegisterField::A);
+    fn arithmetic_shift<F>(&mut self, mode: &AddressingMode, op: F)
+    where
+        F: Fn(u8, bool) -> (u8, bool),
+    {
+        if matches!(mode, AddressingMode::Accumulator) {
+            self.arithmetic_accumulator(&op);
+        } else {
+            self.arithmetic_mem(mode, op);
+        }
+    }
 
-        self.register.status.set(CpuFlags::CARRY, data >> 7 == 1);
-        data <<= 1;
+    fn arithmetic_accumulator<F>(&mut self, op: &F)
+    where
+        F: Fn(u8, bool) -> (u8, bool),
+    {
+        let data = self.register.read(RegisterField::A);
+        let carry = self.register.status.contains(CpuFlags::CARRY);
+
+        let (data, carry) = op(data, carry);
+        self.register.status.set(CpuFlags::CARRY, carry);
 
         self.register.write(RegisterField::A, data);
     }
 
-    fn asl_memory(&mut self, mode: &AddressingMode) {
+    fn arithmetic_mem<F>(&mut self, mode: &AddressingMode, op: F)
+    where
+        F: Fn(u8, bool) -> (u8, bool),
+    {
         let addr = self.get_operand_address(mode);
-        let mut data = self.mem_read(addr);
+        let data = self.mem_read(addr);
+        let carry = self.register.status.contains(CpuFlags::CARRY);
 
-        self.register.status.set(CpuFlags::CARRY, data >> 7 == 1);
-        data <<= 1;
-
-        self.mem_write(addr, data);
-        self.register.update_zero_and_negative_flags(data);
-    }
-
-    fn lsr_accumulator(&mut self) {
-        let mut data = self.register.read(RegisterField::A);
-
-        self.register.status.set(CpuFlags::CARRY, data & 0x1 == 1);
-        data >>= 1;
-
-        self.register.write(RegisterField::A, data);
-    }
-
-    fn lsr_memory(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
-        let mut data = self.mem_read(addr);
-
-        self.register.status.set(CpuFlags::CARRY, data & 0x1 == 1);
-        data >>= 1;
+        let (data, carry) = op(data, carry);
+        self.register.status.set(CpuFlags::CARRY, carry);
 
         self.mem_write(addr, data);
         self.register.update_zero_and_negative_flags(data);
@@ -435,6 +428,30 @@ impl CPU {
             }
         }
     }
+}
+
+fn asl(data: u8, _: bool) -> (u8, bool) {
+    let carry = data >> 7 == 1;
+    let result = data << 1;
+    (result, carry)
+}
+
+fn lsr(data: u8, _: bool) -> (u8, bool) {
+    let result = data >> 1;
+    let carry = data & 0x1 == 1;
+    (result, carry)
+}
+
+fn rol(data: u8, carry: bool) -> (u8, bool) {
+    let new_carry = data >> 7 == 1;
+    let result = data << 1 | (carry as u8);
+    (result, new_carry)
+}
+
+fn ror(data: u8, carry: bool) -> (u8, bool) {
+    let new_carry = data & 0x1 == 1;
+    let result = data >> 1 | ((carry as u8) << 7);
+    (result, new_carry)
 }
 
 #[cfg(test)]
@@ -858,6 +875,66 @@ mod test {
         let mut cpu = CPU::new();
         cpu.mem_write(0x40, 0x81);
         cpu.load_and_run(&[0x46, 0x40, 0x00]);
+        assert_eq!(cpu.mem_read(0x40), 0x40);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x00);
+        assert!(cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0x2a_rol_carry() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA9, 0x81, 0x2A, 0x00]);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x02);
+        assert!(cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0x2a_rol_no_carry() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA9, 0x40, 0x2A, 0x00]);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x80);
+        assert!(!cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0x2e_rol_update_memory_and_set_carry() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x40, 0x81);
+        cpu.load_and_run(&[0x2E, 0x40, 0x00]);
+        assert_eq!(cpu.mem_read(0x40), 0x02);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x00);
+        assert!(cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0x6a_ror_carry() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA9, 0x81, 0x6A, 0x00]);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x40);
+        assert!(cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0x6a_ror_no_carry() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA9, 0x40, 0x6A, 0x00]);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x20);
+        assert!(!cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0x6a_ror_carry_flag_already_set() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[0xA9, 0x40, 0x38, 0x6A, 0x00]);
+        assert_eq!(cpu.register.read(RegisterField::A), 0xA0);
+        assert!(!cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0x6e_ror_update_memory_and_set_carry() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x40, 0x81);
+        cpu.load_and_run(&[0x6E, 0x40, 0x00]);
         assert_eq!(cpu.mem_read(0x40), 0x40);
         assert_eq!(cpu.register.read(RegisterField::A), 0x00);
         assert!(cpu.register.status.contains(CpuFlags::CARRY));
