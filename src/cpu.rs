@@ -95,6 +95,16 @@ impl CPU {
                 Instruction::INX => self.increment(RegisterField::X),
                 Instruction::INY => self.increment(RegisterField::Y),
 
+                // Branch Operations
+                Instruction::BCC => self.branch(!self.register.status.contains(CpuFlags::CARRY)),
+                Instruction::BCS => self.branch(self.register.status.contains(CpuFlags::CARRY)),
+                Instruction::BNE => self.branch(!self.register.status.contains(CpuFlags::ZERO)),
+                Instruction::BEQ => self.branch(self.register.status.contains(CpuFlags::ZERO)),
+                Instruction::BPL => self.branch(!self.register.status.contains(CpuFlags::NEGATIVE)),
+                Instruction::BMI => self.branch(self.register.status.contains(CpuFlags::NEGATIVE)),
+                Instruction::BVC => self.branch(!self.register.status.contains(CpuFlags::OVERFLOW)),
+                Instruction::BVS => self.branch(self.register.status.contains(CpuFlags::OVERFLOW)),
+
                 // Compare Operations
                 Instruction::CMP => self.compare(RegisterField::A, &opcode.mode),
                 Instruction::CPX => self.compare(RegisterField::X, &opcode.mode),
@@ -275,6 +285,14 @@ impl CPU {
         self.register.status.set(CpuFlags::ZERO, value == 0);
     }
 
+    fn branch(&mut self, condition: bool) {
+        if condition {
+            let jump: i8 = self.mem_read(self.register.pc) as i8;
+            let jump_addr = self.register.pc.wrapping_add(1).wrapping_add(jump as u16);
+            self.register.pc = jump_addr
+        }
+    }
+
     fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
         match mode {
             AddressingMode::Immediate => self.register.pc,
@@ -323,6 +341,7 @@ impl CPU {
 #[cfg(test)]
 mod test {
     use crate::cpu::{CpuFlags, Mem, CPU};
+    use crate::opcodes;
     use crate::register::{RegisterField, STACK_RESET};
 
     #[test]
@@ -794,5 +813,96 @@ mod test {
         cpu.load_and_run(&[0xA0, 0xF0, 0xCC, 0xAA, 0x00]);
         assert!(cpu.register.status.contains(CpuFlags::ZERO));
         assert!(cpu.register.status.contains(CpuFlags::CARRY));
+    }
+
+    #[test]
+    fn test_0x90_bcc_loop() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[
+            0xA2, 0x08, 0xCA, 0x8E, 0x00, 0x02, 0xE0, 0x03, 0x90, 0xF8, 0x8E, 0x01, 0x02, 0x00,
+        ]);
+        assert_eq!(cpu.register.read(RegisterField::X), 0x07);
+        assert_eq!(cpu.mem_read(0x0201), 0x07);
+    }
+
+    #[test]
+    fn test_0xb0_bcs_loop() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[
+            0xA2, 0x08, 0xCA, 0x8E, 0x00, 0x02, 0xE0, 0x03, 0xB0, 0xF8, 0x8E, 0x01, 0x02, 0x00,
+        ]);
+        assert_eq!(cpu.register.read(RegisterField::X), 0x02);
+        assert_eq!(cpu.mem_read(0x0201), 0x02);
+    }
+
+    #[test]
+    fn test_0xf0_beq_loop() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[
+            0xA2, 0x08, 0xCA, 0x8E, 0x00, 0x02, 0xE0, 0x03, 0xF0, 0xF8, 0x8E, 0x01, 0x02, 0x00,
+        ]);
+        assert_eq!(cpu.register.read(RegisterField::X), 0x07);
+        assert_eq!(cpu.mem_read(0x0201), 0x07);
+    }
+
+    #[test]
+    fn test_0x30_bmi_loop() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[
+            0xA2, 0x08, 0xCA, 0x8E, 0x00, 0x02, 0xE0, 0x03, 0x30, 0xF8, 0x8E, 0x01, 0x02, 0x00,
+        ]);
+        assert_eq!(cpu.register.read(RegisterField::X), 0x07);
+        assert_eq!(cpu.mem_read(0x0201), 0x07);
+    }
+
+    #[test]
+    fn test_0xd0_bne_loop() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[
+            0xA2, 0x08, 0xCA, 0x8E, 0x00, 0x02, 0xE0, 0x03, 0xD0, 0xF8, 0x8E, 0x01, 0x02, 0x00,
+        ]);
+        assert_eq!(cpu.register.read(RegisterField::X), 0x03);
+        assert_eq!(cpu.mem_read(0x0201), 0x03);
+    }
+
+    #[test]
+    fn test_0x10_bpl_loop() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[
+            0xA2, 0x08, 0xCA, 0x8E, 0x00, 0x02, 0xE0, 0x03, 0x10, 0xF8, 0x8E, 0x01, 0x02, 0x00,
+        ]);
+        assert_eq!(cpu.register.read(RegisterField::X), 0x02);
+        assert_eq!(cpu.mem_read(0x0201), 0x02);
+    }
+
+    #[test]
+    fn test_0x50_bvc_loop() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[
+            0xA2, 0x08, 0xA9, 0xF0, 0x85, 0x44, 0xCA, 0x24, 0x44, 0xE0, 0x03, 0x50, 0xF9, 0x8E,
+            0x01, 0x02, 0x00,
+        ]);
+        assert_eq!(cpu.register.read(RegisterField::X), 0x07);
+        assert_eq!(cpu.mem_read(0x0201), 0x07);
+    }
+
+    #[test]
+    fn test_0x70_bvs_loop() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[
+            0xA2, 0x08, 0xCA, 0x8E, 0x00, 0x02, 0xE0, 0x03, 0x70, 0xF8, 0x8E, 0x01, 0x02, 0x00,
+        ]);
+        assert_eq!(cpu.register.read(RegisterField::X), 0x07);
+        assert_eq!(cpu.mem_read(0x0201), 0x07);
+    }
+
+    #[test]
+    fn test_all_operations_implemented() {
+        let mut cpu = CPU::new();
+        let ref opcodes = *opcodes::CPU_OPCODES;
+
+        for op in opcodes {
+            cpu.load_and_run(&[op.code, 0x00, 0x00, 0x00, 0x00]);
+        }
     }
 }
