@@ -1,5 +1,6 @@
-use crate::cpu::CPU;
+use crate::bus::Bus;
 use crate::cartridge::Rom;
+use crate::cpu::CPU;
 use bus::Mem;
 use rand::Rng;
 use sdl2::event::Event;
@@ -7,13 +8,14 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::EventPump;
 use std::env;
-use crate::bus::Bus;
+use crate::trace::trace;
 
 mod bus;
+mod cartridge;
 mod cpu;
 mod opcodes;
 mod register;
-mod cartridge;
+mod trace;
 
 fn handle_user_input(cpu: &mut CPU, event_pump: &mut EventPump) {
     for event in event_pump.poll_iter() {
@@ -121,7 +123,12 @@ fn main() {
     let mut screen_state = [0 as u8; 32 * 32 * 3];
     let mut rng = rand::thread_rng();
 
+    // TODO: Only use this when running nestest
+    cpu.register.pc = 0xC000;
+
     cpu.run_with_callback(move |cpu| {
+        println!("{}", trace(cpu));
+
         handle_user_input(cpu, &mut event_pump);
         cpu.mem_write(0xFE, rng.gen_range(1..16));
 

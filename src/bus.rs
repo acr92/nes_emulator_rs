@@ -105,10 +105,12 @@ impl Mem for Bus {
             }
             PPU_REGISTERS_START..=PPU_REGISTERS_MIRRORS_END => {
                 let _mirror_down_addr = addr & PPU_REGISTERS_MIRRORS_MASK;
-                todo!("PPU is not supported yet")
+                //todo!("PPU is not supported yet")
+                0
             }
             APU_REGISTERS_START..=APU_REGISTERS_END => {
-                todo!("APU is not supported yet")
+                //todo!("APU is not supported yet")
+                0
             }
             PRG_START..=PRG_END => self.read_prg_rom(addr),
             _ => {
@@ -125,7 +127,7 @@ impl Mem for Bus {
                 self.cpu_vram[mirror_down_addr as usize] = value;
             }
             PPU_REGISTERS_START..=PPU_REGISTERS_MIRRORS_END => {
-                todo!("PPU is not supported yet")
+                //todo!("PPU is not supported yet")
             }
             PRG_START..=PRG_END => {
                 panic!("Attempt to write to Cartridge ROM space")
@@ -172,6 +174,7 @@ mod tests {
         assert_eq!(bus.mem_read(0x1800), 4);
     }
 
+    #[ignore]
     #[test]
     #[should_panic(expected = "PPU is not supported yet")]
     fn test_ppu_read() {
@@ -179,6 +182,7 @@ mod tests {
         let _value = bus.mem_read(0x2000);
     }
 
+    #[ignore]
     #[test]
     #[should_panic(expected = "PPU is not supported yet")]
     fn test_ppu_write() {
