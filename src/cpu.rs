@@ -2,7 +2,7 @@ use crate::opcodes;
 use crate::opcodes::{
     is_addressing_absolute, is_addressing_accumulator, AddressingMode, Instruction,
 };
-use crate::register::{CpuFlags, Register, RegisterField};
+use crate::register::{CpuFlags, Register, RegisterField, STACK};
 
 pub struct CPU {
     pub register: Register,
@@ -56,6 +56,7 @@ impl CPU {
         self.reset();
         self.run()
     }
+
     fn load_program_into_memory(&mut self, program: &[u8]) {
         self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(program);
         self.mem_write_u16(0xFFFC, 0x8000);
@@ -120,6 +121,8 @@ impl CPU {
                 Instruction::JMP => {
                     self.jmp_indirect();
                 }
+                Instruction::JSR => self.jsr(),
+                Instruction::RTS => self.rts(),
 
                 // Compare Operations
                 Instruction::CMP => self.compare(RegisterField::A, &opcode.mode),
@@ -236,6 +239,30 @@ impl CPU {
         self.register.write(RegisterField::A, value);
     }
 
+    fn stack_push(&mut self, value: u8) {
+        self.mem_write((STACK as u16) + self.register.sp as u16, value);
+        self.register.sp = self.register.sp.wrapping_sub(1);
+    }
+
+    fn stack_pop(&mut self) -> u8 {
+        self.register.sp = self.register.sp.wrapping_add(1);
+        self.mem_read((STACK as u16) + self.register.sp as u16)
+    }
+
+    fn stack_push_u16(&mut self, value: u16) {
+        let hi = (value >> 8) as u8;
+        let lo = (value & 0xFF) as u8;
+        self.stack_push(hi);
+        self.stack_push(lo);
+    }
+
+    fn stack_pop_u16(&mut self) -> u16 {
+        let lo = self.stack_pop() as u16;
+        let hi = self.stack_pop() as u16;
+
+        hi << 8 | lo
+    }
+
     fn adc(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let data = self.mem_read(addr);
@@ -341,6 +368,17 @@ impl CPU {
         };
 
         self.register.pc = indirect_ref;
+    }
+
+    fn jsr(&mut self) {
+        self.stack_push_u16(self.register.pc + 2 /* op arg */ - 1 /* spec */);
+        let addr = self.get_operand_address(&AddressingMode::Absolute);
+        self.register.pc = addr;
+    }
+
+    fn rts(&mut self) {
+        let addr = self.stack_pop_u16() + 1;
+        self.register.pc = addr;
     }
 
     fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
@@ -986,6 +1024,48 @@ mod test {
         ]);
         assert_eq!(cpu.register.read(RegisterField::A), 0x03);
         assert_eq!(cpu.mem_read(0x0200), 0x03);
+    }
+
+    #[test]
+    fn test_0x20_jsr_and_0x60_rts() {
+        /*
+          JSR init
+          JSR loop
+          JSR end
+
+        end:
+          BRK
+
+        loop:
+          INX
+          CPX #$05
+          BNE loop
+          RTS
+
+        init:
+          LDX #$00
+          RTS
+
+         */
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[
+            0x20, 0x10, 0x80, 0x20, 0x0A, 0x80, 0x20, 0x09, 0x80, 0x00, 0xE8, 0xE0, 0x05, 0xD0,
+            0xFB, 0x60, 0xA2, 0x00, 0x60,
+        ]);
+        assert_eq!(cpu.register.read(RegisterField::X), 0x05);
+        // end: is a subroutine, so stack isn't completely reset
+        assert_eq!(cpu.register.sp, STACK_RESET - 2);
+    }
+
+    #[test]
+    fn test_stack_push_pop() {
+        let mut cpu = CPU::new();
+        cpu.stack_push_u16(0xCAFE);
+        cpu.stack_push_u16(0xAABB);
+        cpu.stack_push_u16(0xCCDD);
+        assert_eq!(cpu.stack_pop_u16(), 0xCCDD);
+        assert_eq!(cpu.stack_pop_u16(), 0xAABB);
+        assert_eq!(cpu.stack_pop_u16(), 0xCAFE);
     }
 
     #[test]
