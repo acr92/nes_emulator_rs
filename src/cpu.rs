@@ -1,5 +1,7 @@
 use crate::opcodes;
-use crate::opcodes::{is_addressing_accumulator, AddressingMode, Instruction};
+use crate::opcodes::{
+    is_addressing_absolute, is_addressing_accumulator, AddressingMode, Instruction,
+};
 use crate::register::{CpuFlags, Register, RegisterField};
 
 pub struct CPU {
@@ -71,6 +73,11 @@ impl CPU {
                 .get(&code)
                 .expect(&format!("Opcode {:x} is not recognized", code));
 
+            println!(
+                "Processing {:#?} pc={:x}",
+                opcode.instruction, self.register.pc
+            );
+
             match opcode.instruction {
                 Instruction::BRK => {
                     return;
@@ -92,8 +99,9 @@ impl CPU {
                 Instruction::DEC => self.decrement_memory(&opcode.mode),
                 Instruction::DEX => self.decrement_register(RegisterField::X),
                 Instruction::DEY => self.decrement_register(RegisterField::Y),
-                Instruction::INX => self.increment(RegisterField::X),
-                Instruction::INY => self.increment(RegisterField::Y),
+                Instruction::INC => self.increment_memory(&opcode.mode),
+                Instruction::INX => self.increment_register(RegisterField::X),
+                Instruction::INY => self.increment_register(RegisterField::Y),
 
                 // Branch Operations
                 Instruction::BCC => self.branch(!self.register.status.contains(CpuFlags::CARRY)),
@@ -104,6 +112,14 @@ impl CPU {
                 Instruction::BMI => self.branch(self.register.status.contains(CpuFlags::NEGATIVE)),
                 Instruction::BVC => self.branch(!self.register.status.contains(CpuFlags::OVERFLOW)),
                 Instruction::BVS => self.branch(self.register.status.contains(CpuFlags::OVERFLOW)),
+
+                // Jump
+                Instruction::JMP if is_addressing_absolute(opcode.mode) => {
+                    self.jmp_absolute();
+                }
+                Instruction::JMP => {
+                    self.jmp_indirect();
+                }
 
                 // Compare Operations
                 Instruction::CMP => self.compare(RegisterField::A, &opcode.mode),
@@ -163,9 +179,19 @@ impl CPU {
         self.register.write(target, value);
     }
 
-    fn increment(&mut self, target: RegisterField) {
+    fn increment_register(&mut self, target: RegisterField) {
         let value = self.register.read(target).wrapping_add(1);
         self.register.write(target, value);
+    }
+
+    fn increment_memory(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let mut value = self.mem_read(addr);
+
+        value = value.wrapping_add(1);
+
+        self.mem_write(addr, value);
+        self.register.update_zero_and_negative_flags(value);
     }
 
     fn decrement_register(&mut self, target: RegisterField) {
@@ -178,8 +204,8 @@ impl CPU {
         let mut value = self.mem_read(addr);
 
         value = value.wrapping_sub(1);
-        self.mem_write(addr, value);
 
+        self.mem_write(addr, value);
         self.register.update_zero_and_negative_flags(value);
     }
 
@@ -291,6 +317,30 @@ impl CPU {
             let jump_addr = self.register.pc.wrapping_add(1).wrapping_add(jump as u16);
             self.register.pc = jump_addr
         }
+    }
+
+    fn jmp_absolute(&mut self) {
+        let addr = self.get_operand_address(&AddressingMode::Absolute);
+        self.register.pc = addr;
+    }
+
+    fn jmp_indirect(&mut self) {
+        let addr = self.get_operand_address(&AddressingMode::Absolute);
+
+        // 6502 bug mode with with page boundary:
+        //  if address $3000 contains $40, $30FF contains $80, and $3100 contains $50,
+        // the result of JMP ($30FF) will be a transfer of control to $4080 rather than $5080 as you intended
+        // i.e. the 6502 took the low byte of the address from $30FF and the high byte from $3000
+
+        let indirect_ref = if addr & 0x00FF == 0x00FF {
+            let lo = self.mem_read(addr);
+            let hi = self.mem_read(addr & 0xFF00);
+            (hi as u16) << 8 | (lo as u16)
+        } else {
+            self.mem_read_u16(addr)
+        };
+
+        self.register.pc = indirect_ref;
     }
 
     fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
@@ -417,6 +467,15 @@ mod test {
         let mut cpu = CPU::new();
         cpu.load_and_run(&[0xA0, 0xff, 0xaa, 0xC8, 0xC8, 0x00]);
         assert_eq!(cpu.register.read(RegisterField::Y), 1)
+    }
+
+    #[test]
+    fn test_0xe6_inc() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0xCA, 0x02);
+        cpu.load_and_run(&[0xE6, 0xCA, 0x00]);
+        assert_eq!(cpu.mem_read(0xCA), 0x03);
+        assert!(!cpu.register.status.contains(CpuFlags::ZERO));
     }
 
     #[test]
@@ -894,6 +953,39 @@ mod test {
         ]);
         assert_eq!(cpu.register.read(RegisterField::X), 0x07);
         assert_eq!(cpu.mem_read(0x0201), 0x07);
+    }
+
+    #[test]
+    fn test_0x4c_jmp_absolute() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(&[
+            0xA9, 0x03, 0x4C, 0x08, 0x80, 0x00, 0x00, 0x00, 0x8D, 0x00, 0x02,
+        ]);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x03);
+        assert_eq!(cpu.mem_read(0x0200), 0x03);
+    }
+
+    #[test]
+    fn test_0x6c_jmp_indirect() {
+        let mut cpu = CPU::new();
+        cpu.mem_write_u16(0x0610, 0x8008);
+        cpu.load_and_run(&[
+            0xA9, 0x03, 0x6C, 0x10, 0x06, 0x00, 0x00, 0x00, 0x8D, 0x00, 0x02,
+        ]);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x03);
+        assert_eq!(cpu.mem_read(0x0200), 0x03);
+    }
+
+    #[test]
+    fn test_0x6c_jmp_indirect_6502_bug() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x06FF, 0x08);
+        cpu.mem_write(0x0600, 0x80);
+        cpu.load_and_run(&[
+            0xA9, 0x03, 0x6C, 0xFF, 0x06, 0x00, 0x00, 0x00, 0x8D, 0x00, 0x02,
+        ]);
+        assert_eq!(cpu.register.read(RegisterField::A), 0x03);
+        assert_eq!(cpu.mem_read(0x0200), 0x03);
     }
 
     #[test]

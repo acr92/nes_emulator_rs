@@ -21,6 +21,10 @@ pub fn is_addressing_accumulator(mode: AddressingMode) -> bool {
     matches!(mode, AddressingMode::Accumulator)
 }
 
+pub fn is_addressing_absolute(mode: AddressingMode) -> bool {
+    matches!(mode, AddressingMode::Absolute)
+}
+
 #[derive(Debug)]
 pub enum Instruction {
     ADC,
