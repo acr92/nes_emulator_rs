@@ -7,7 +7,7 @@ pub struct CPU {
     memory: [u8; 0xFFFF],
 }
 
-trait Mem {
+pub trait Mem {
     fn mem_read(&self, addr: u16) -> u8;
 
     fn mem_write(&mut self, addr: u16, value: u8);
@@ -49,21 +49,32 @@ impl CPU {
         self.register.pc = self.mem_read_u16(0xFFFC);
     }
 
-    pub fn load_and_run(&mut self, program: &[u8]) {
-        self.load_program_into_memory(program);
+    #[cfg(test)]
+    fn load_and_run(&mut self, program: &[u8]) {
+        self.load_program_into_memory(program, 0x8000);
         self.reset();
         self.run()
     }
 
-    fn load_program_into_memory(&mut self, program: &[u8]) {
-        self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(program);
-        self.mem_write_u16(0xFFFC, 0x8000);
+    pub fn load_program_into_memory(&mut self, program: &[u8], base: usize) {
+        self.memory[base..(base + program.len())].copy_from_slice(program);
+        self.mem_write_u16(0xFFFC, base as u16);
     }
 
+    #[cfg(test)]
     fn run(&mut self) {
+        self.run_with_callback(|_| {});
+    }
+
+    pub fn run_with_callback<F>(&mut self, mut callback: F)
+    where
+        F: FnMut(&mut CPU),
+    {
         let ref opcodes = *opcodes::OPCODES_MAP;
 
         loop {
+            callback(self);
+
             let code = self.mem_read(self.register.pc);
             self.register.pc += 1;
             let program_counter_state = self.register.pc;
@@ -71,11 +82,6 @@ impl CPU {
             let opcode = opcodes
                 .get(&code)
                 .expect(&format!("Opcode {:x} is not recognized", code));
-
-            println!(
-                "Processing {:#?} pc={:x}",
-                opcode.instruction, self.register.pc
-            );
 
             match opcode.instruction {
                 Instruction::BRK => {
@@ -217,15 +223,16 @@ impl CPU {
 
     fn compare(&mut self, source: RegisterField, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
+        let data = self.mem_read(addr);
 
-        let lhs = self.register.read(source);
-        let rhs = self.mem_read(addr);
+        let compare_with = self.register.read(source);
 
-        let result = lhs.wrapping_sub(rhs);
+        let result = compare_with.wrapping_sub(data);
 
-        self.register.status.set(CpuFlags::CARRY, lhs >= rhs);
-        self.register.status.set(CpuFlags::ZERO, lhs == rhs);
-        self.register.status.set(CpuFlags::NEGATIVE, result >= 0x80);
+        self.register
+            .status
+            .set(CpuFlags::CARRY, compare_with >= data);
+        self.register.update_zero_and_negative_flags(result);
     }
 
     fn logic<F>(&mut self, mode: &AddressingMode, op: F)
@@ -419,11 +426,14 @@ impl CPU {
     fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
         match mode {
             AddressingMode::Immediate => self.register.pc,
+
             AddressingMode::ZeroPage => self.mem_read(self.register.pc) as u16,
+
             AddressingMode::Absolute => self.mem_read_u16(self.register.pc),
+
             AddressingMode::ZeroPage_X => {
                 let pos = self.mem_read(self.register.pc);
-                let addr = pos.wrapping_add(self.register.read(RegisterField::A)) as u16;
+                let addr = pos.wrapping_add(self.register.read(RegisterField::X)) as u16;
                 addr
             }
             AddressingMode::ZeroPage_Y => {
@@ -431,31 +441,38 @@ impl CPU {
                 let addr = pos.wrapping_add(self.register.read(RegisterField::Y)) as u16;
                 addr
             }
+
             AddressingMode::Absolute_X => {
                 let base = self.mem_read_u16(self.register.pc);
-                let addr = base.wrapping_add(self.register.read(RegisterField::X) as u16) as u16;
+                let addr = base.wrapping_add(self.register.read(RegisterField::X) as u16);
                 addr
             }
             AddressingMode::Absolute_Y => {
                 let base = self.mem_read_u16(self.register.pc);
-                let addr = base.wrapping_add(self.register.read(RegisterField::Y) as u16) as u16;
+                let addr = base.wrapping_add(self.register.read(RegisterField::Y) as u16);
                 addr
             }
+
             AddressingMode::Indirect_X => {
                 let base = self.mem_read(self.register.pc);
-                let ptr = base.wrapping_add(self.register.read(RegisterField::X));
-                self.mem_read_u16(ptr as u16)
+
+                let ptr: u8 = (base as u8).wrapping_add(self.register.read(RegisterField::X));
+                let lo = self.mem_read(ptr as u16);
+                let hi = self.mem_read(ptr.wrapping_add(1) as u16);
+                (hi as u16) << 8 | (lo as u16)
             }
             AddressingMode::Indirect_Y => {
                 let base = self.mem_read(self.register.pc);
-                let deref_base = self.mem_read_u16(base as u16);
-                deref_base.wrapping_add(self.register.read(RegisterField::Y) as u16)
+
+                let lo = self.mem_read(base as u16);
+                let hi = self.mem_read((base as u8).wrapping_add(1) as u16);
+                let deref_base = (hi as u16) << 8 | (lo as u16);
+                let deref = deref_base.wrapping_add(self.register.read(RegisterField::Y) as u16);
+                deref
             }
-            AddressingMode::Accumulator => {
-                panic!("mode {:?} not supported", mode)
-            }
-            AddressingMode::NoneAddressing => {
-                panic!("mode {:?} not supported", mode)
+
+            _ => {
+                panic!("mode {:?} is not supported", mode);
             }
         }
     }
