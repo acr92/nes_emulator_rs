@@ -8,14 +8,18 @@ pub fn trace(cpu: &CPU) -> String {
     let ref opscodes = *opcodes::OPCODES_MAP;
 
     let code = cpu.mem_read(cpu.register.pc);
-    let ops = opscodes.get(&code).expect(format!("Unknown OP 0x{:02X}", code).as_str());
+    let ops = opscodes
+        .get(&code)
+        .expect(format!("Unknown OP 0x{:02X}", code).as_str());
 
     let begin = cpu.register.pc;
     let mut hex_dump = vec![];
     hex_dump.push(code);
 
     let (mem_addr, stored_value) = match ops.mode {
-        AddressingMode::Immediate | AddressingMode::Accumulator | AddressingMode::NoneAddressing => (0, 0),
+        AddressingMode::Immediate
+        | AddressingMode::Accumulator
+        | AddressingMode::NoneAddressing => (0, 0),
         _ => {
             let addr = cpu.get_absolute_address(&ops.mode, begin + 1);
             (addr, cpu.mem_read(addr))
@@ -62,6 +66,7 @@ pub fn trace(cpu: &CPU) -> String {
                         (begin as usize + 2).wrapping_add((address as i8) as usize);
                     format!("${:04x}", address)
                 }
+                AddressingMode::Absolute => format!("${:04x} = {:02x}", mem_addr, stored_value),
 
                 _ => panic!(
                     "unexpected addressing mode {:?} has ops-len 2. code {:02x}",
@@ -95,7 +100,7 @@ pub fn trace(cpu: &CPU) -> String {
                         format!("${:04x}", address)
                     }
                 }
-                AddressingMode::Absolute => format!("${:04x} = {:02x}", mem_addr, stored_value),
+                AddressingMode::Absolute => format!("${:04x}", mem_addr),
                 AddressingMode::Absolute_X => format!(
                     "${:04x},X @ {:04x} = {:02x}",
                     address, mem_addr, stored_value

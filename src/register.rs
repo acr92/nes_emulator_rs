@@ -37,6 +37,7 @@ pub enum RegisterField {
     STATUS,
 }
 
+#[derive(Debug)]
 pub struct Register {
     a: u8,
     x: u8,
@@ -78,7 +79,7 @@ impl Register {
         }
 
         match field {
-            RegisterField::SP => {}
+            RegisterField::SP | RegisterField::STATUS => {}
             _ => self.update_zero_and_negative_flags(value),
         }
     }

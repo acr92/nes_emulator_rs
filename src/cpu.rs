@@ -1,7 +1,7 @@
 use crate::bus::Bus;
 use crate::bus::Mem;
 use crate::opcodes;
-use crate::opcodes::{is_addressing_absolute, AddressingMode, Instruction};
+use crate::opcodes::{is_addressing_absolute, AddressingMode, Instruction, OpCode};
 use crate::register::{CpuFlags, Register, RegisterField, STACK};
 
 pub struct CPU {
@@ -138,6 +138,7 @@ impl CPU {
                 Instruction::LDA => self.load(RegisterField::A, &opcode.mode),
                 Instruction::LDX => self.load(RegisterField::X, &opcode.mode),
                 Instruction::LDY => self.load(RegisterField::Y, &opcode.mode),
+                Instruction::LAX => self.lax(&opcode),
 
                 // Store Operations
                 Instruction::STA => self.store(RegisterField::A, &opcode.mode),
@@ -152,7 +153,12 @@ impl CPU {
                 Instruction::TXS => self.transfer(RegisterField::X, RegisterField::SP),
                 Instruction::TYA => self.transfer(RegisterField::Y, RegisterField::A),
 
-                _ => { panic!("Unknown opcode: {:#02X} instruction: {:#?}", code, opcode.instruction) }
+                _ => {
+                    panic!(
+                        "Unknown opcode: {:#02X} instruction: {:#?}",
+                        code, opcode.instruction
+                    )
+                }
             }
 
             if program_counter_state == self.register.pc {
@@ -254,6 +260,12 @@ impl CPU {
         hi << 8 | lo
     }
 
+    fn lax(&mut self, opcode: &&&OpCode) {
+        self.load(RegisterField::A, &opcode.mode);
+        self.register
+            .write(RegisterField::X, self.register.read(RegisterField::A))
+    }
+
     fn pla(&mut self) {
         let value = self.stack_pop();
         self.register.write(RegisterField::A, value);
@@ -272,7 +284,7 @@ impl CPU {
 
     fn php(&mut self) {
         let mut flags = self.register.status.clone();
-        flags.remove(CpuFlags::BREAK);
+        flags.insert(CpuFlags::BREAK);
         flags.insert(CpuFlags::BREAK2);
         self.stack_push(flags.bits());
     }
@@ -350,15 +362,17 @@ impl CPU {
 
     fn bit(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
-        let value = self.register.read(RegisterField::A) & self.mem_read(addr);
+        let data = self.mem_read(addr);
+
+        let mask = self.register.read(RegisterField::A) & data;
+        self.register.status.set(CpuFlags::ZERO, mask == 0);
 
         self.register
             .status
-            .set(CpuFlags::NEGATIVE, value & 0b1000_0000 != 0);
+            .set(CpuFlags::NEGATIVE, data & 0b1000_0000 > 0);
         self.register
             .status
-            .set(CpuFlags::OVERFLOW, value & 0b0100_0000 != 0);
-        self.register.status.set(CpuFlags::ZERO, value == 0);
+            .set(CpuFlags::OVERFLOW, data & 0b0100_0000 > 0);
     }
 
     fn branch(&mut self, condition: bool) {
@@ -747,7 +761,7 @@ mod test {
     #[test]
     fn test_0x24_bit_test_should_only_set_overflow() {
         let mut cpu = CPU::new(Bus::new());
-        cpu.mem_write(0xAA, 0xF0);
+        cpu.mem_write(0xAA, 0x70);
         cpu.eval(&[0xA9, 0x70, 0x24, 0xAA, 0x00]);
         assert!(cpu.register.status.contains(CpuFlags::OVERFLOW));
         assert!(!cpu.register.status.contains(CpuFlags::NEGATIVE));
@@ -1249,7 +1263,7 @@ mod test {
     fn test_0x08_php() {
         let mut cpu = CPU::new(Bus::new());
         cpu.eval(&[0x08, 0x00]);
-        assert_eq!(cpu.stack_pop(), 0b100100);
+        assert_eq!(cpu.stack_pop(), 0b110100);
     }
 
     #[test]
@@ -1270,6 +1284,28 @@ mod test {
         */
         cpu.eval(&[0x38, 0x08, 0x78, 0x28, 0x00]);
         assert_eq!(cpu.register.status.bits(), 0b100101);
+    }
+
+    #[test]
+    fn test_0x28_plp_sets_correct_flags() {
+        let mut cpu = CPU::new(Bus::new());
+        /*
+           LDA #$FF
+           PHA
+           PLP
+        */
+        cpu.eval(&[0xA9, 0xFF, 0x48, 0x28, 0x00]);
+        assert_eq!(cpu.register.status.bits(), 0xEF);
+    }
+
+    #[test]
+    fn test_0xaf_lax() {
+        let mut cpu = CPU::new(Bus::new());
+        cpu.mem_write(0xAA, 0xBB);
+        cpu.eval(&[0xAF, 0xAA, 0x00]);
+        assert_eq!(cpu.register.read(RegisterField::A), 0xBB);
+        assert_eq!(cpu.register.read(RegisterField::X), 0xBB);
+        assert_eq!(cpu.register.read(RegisterField::Y), 0x00);
     }
 
     #[test]
