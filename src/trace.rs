@@ -8,7 +8,7 @@ pub fn trace(cpu: &CPU) -> String {
     let ref opscodes = *opcodes::OPCODES_MAP;
 
     let code = cpu.mem_read(cpu.register.pc);
-    let ops = opscodes.get(&code).unwrap();
+    let ops = opscodes.get(&code).expect(format!("Unknown OP 0x{:02X}", code).as_str());
 
     let begin = cpu.register.pc;
     let mut hex_dump = vec![];
