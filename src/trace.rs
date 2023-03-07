@@ -1,7 +1,7 @@
 use crate::bus::Mem;
 use crate::cpu::CPU;
 use crate::opcodes;
-use crate::opcodes::AddressingMode;
+use crate::opcodes::{AddressingMode, Instruction, OpCode};
 use crate::register::RegisterField;
 
 pub fn trace(cpu: &CPU) -> String {
@@ -56,7 +56,7 @@ pub fn trace(cpu: &CPU) -> String {
                 AddressingMode::Indirect_Y => format!(
                     "(${:02x}),Y = {:04x} @ {:04x} = {:02x}",
                     address,
-                    (mem_addr.wrapping_sub(cpu.register.read(RegisterField::X) as u16)),
+                    (mem_addr.wrapping_sub(cpu.register.read(RegisterField::Y) as u16)),
                     mem_addr,
                     stored_value
                 ),
@@ -100,6 +100,9 @@ pub fn trace(cpu: &CPU) -> String {
                         format!("${:04x}", address)
                     }
                 }
+                AddressingMode::Absolute if !is_jmp_instruction(ops) => {
+                    format!("${:04x} = {:02x}", mem_addr, stored_value)
+                }
                 AddressingMode::Absolute => format!("${:04x}", mem_addr),
                 AddressingMode::Absolute_X => format!(
                     "${:04x},X @ {:04x} = {:02x}",
@@ -123,12 +126,16 @@ pub fn trace(cpu: &CPU) -> String {
         .map(|z| format!("{:02x}", z))
         .collect::<Vec<String>>()
         .join(" ");
-    let asm_str = format!(
-        "{:04x}  {:8}  {:#?} {}",
-        begin, hex_str, ops.instruction, tmp
-    )
-    .trim()
-    .to_string();
+
+    let instruction = if let Some(mnemonic) = ops.mnemonic.clone() {
+        mnemonic
+    } else {
+        format!(" {:#?}", ops.instruction)
+    };
+
+    let asm_str = format!("{:04x}  {:8} {:} {}", begin, hex_str, instruction, tmp)
+        .trim()
+        .to_string();
 
     format!(
         "{:47} A:{:02x} X:{:02x} Y:{:02x} P:{:02x} SP:{:02x}",
@@ -140,6 +147,13 @@ pub fn trace(cpu: &CPU) -> String {
         cpu.register.sp,
     )
     .to_ascii_uppercase()
+}
+
+fn is_jmp_instruction(ops: &&OpCode) -> bool {
+    match ops.instruction {
+        Instruction::JMP | Instruction::JSR => true,
+        _ => false,
+    }
 }
 
 #[cfg(test)]
