@@ -77,6 +77,7 @@ impl CPU {
                 Instruction::AND => self.logic(&opcode.mode, |a, b| a & b),
                 Instruction::EOR => self.logic(&opcode.mode, |a, b| a ^ b),
                 Instruction::ORA => self.logic(&opcode.mode, |a, b| a | b),
+                Instruction::SAX => self.sax(&opcode.mode),
 
                 // Arithmetic Operations
                 Instruction::ADC => self.adc(&opcode.mode),
@@ -138,7 +139,7 @@ impl CPU {
                 Instruction::LDA => self.load(RegisterField::A, &opcode.mode),
                 Instruction::LDX => self.load(RegisterField::X, &opcode.mode),
                 Instruction::LDY => self.load(RegisterField::Y, &opcode.mode),
-                Instruction::LAX => self.lax(&opcode),
+                Instruction::LAX => self.lax(&opcode.mode),
 
                 // Store Operations
                 Instruction::STA => self.store(RegisterField::A, &opcode.mode),
@@ -152,6 +153,13 @@ impl CPU {
                 Instruction::TXA => self.transfer(RegisterField::X, RegisterField::A),
                 Instruction::TXS => self.transfer(RegisterField::X, RegisterField::SP),
                 Instruction::TYA => self.transfer(RegisterField::Y, RegisterField::A),
+
+                Instruction::DCP => self.dcp(&opcode.mode),
+                Instruction::ISB => self.isb(&opcode.mode),
+                Instruction::SLO => self.slo(&opcode.mode),
+                Instruction::RLA => self.rla(&opcode.mode),
+                Instruction::SRE => self.sre(&opcode.mode),
+                Instruction::RRA => self.rra(&opcode.mode),
 
                 _ => {
                     panic!(
@@ -260,8 +268,13 @@ impl CPU {
         hi << 8 | lo
     }
 
-    fn lax(&mut self, opcode: &&&OpCode) {
-        self.load(RegisterField::A, &opcode.mode);
+    fn dcp(&mut self, mode: &AddressingMode) {
+        self.decrement_memory(&mode);
+        self.compare(RegisterField::A, &mode);
+    }
+
+    fn lax(&mut self, mode: &AddressingMode) {
+        self.load(RegisterField::A, mode);
         self.register
             .write(RegisterField::X, self.register.read(RegisterField::A))
     }
@@ -373,6 +386,36 @@ impl CPU {
         self.register
             .status
             .set(CpuFlags::OVERFLOW, data & 0b0100_0000 > 0);
+    }
+
+    fn sax(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let data = self.register.read(RegisterField::X) & self.register.read(RegisterField::A);
+        self.mem_write(addr, data);
+    }
+
+    fn isb(&mut self, mode: &AddressingMode) {
+        self.increment_memory(mode);
+        self.sbc(mode);
+    }
+
+    fn slo(&mut self, mode: &AddressingMode) {
+        self.arithmetic_shift(mode, asl);
+        self.logic(mode, |a, b| a | b);
+    }
+    fn rla(&mut self, mode: &AddressingMode) {
+        self.arithmetic_shift(mode, rol);
+        self.logic(mode, |a, b| a & b);
+    }
+
+    fn sre(&mut self, mode: &AddressingMode) {
+        self.arithmetic_shift(&mode, lsr);
+        self.logic(&mode, |a, b| a ^ b);
+    }
+
+    fn rra(&mut self, mode: &AddressingMode) {
+        self.arithmetic_shift(&mode, ror);
+        self.adc(&mode);
     }
 
     fn branch(&mut self, condition: bool) {
@@ -1309,6 +1352,15 @@ mod test {
     }
 
     #[test]
+    fn test_0x83_sax_should_not_affect_flags() {
+        let mut cpu = CPU::new(Bus::new());
+        cpu.eval(&[0xA9, 0x04, 0xA2, 0x02, 0x83, 0x49, 0x00]);
+
+        assert!(!cpu.register.status.contains(CpuFlags::ZERO));
+        assert!(!cpu.register.status.contains(CpuFlags::NEGATIVE));
+    }
+
+    #[test]
     fn test_stack_program_multiple_loops() {
         /*
           LDX #$00
@@ -1341,14 +1393,15 @@ mod test {
         assert_eq!(cpu.mem_read(0x0210), 0x0F);
     }
 
-    #[ignore] // We got to implement some new unofficial instructions
     #[test]
-    fn test_all_operations_implemented() {
+    fn test_all_official_operations_implemented() {
         let mut cpu = CPU::new(Bus::new());
         let ref opcodes = *opcodes::CPU_OPCODES;
 
         for op in opcodes {
-            cpu.eval(&[op.code, 0x00, 0x00, 0x00, 0x00]);
+            if op.unofficial_name == None {
+                cpu.eval(&[op.code, 0x00, 0x00, 0x00, 0x00]);
+            }
         }
     }
 

@@ -83,7 +83,7 @@ pub enum Instruction {
 
     // Unofficial opcodes
     AAC,
-    AAX,
+    SAX,
     ARR,
     ASR,
     ATX,
@@ -91,7 +91,7 @@ pub enum Instruction {
     AXS,
     DCP,
     DOP,
-    ISC,
+    ISB,
     KIL,
     LAR,
     LAX,
@@ -112,7 +112,7 @@ pub struct OpCode {
     pub len: u8,
     pub cycles: u8,
     pub mode: AddressingMode,
-    pub mnemonic: Option<String>,
+    pub unofficial_name: Option<String>,
 }
 
 impl OpCode {
@@ -123,7 +123,7 @@ impl OpCode {
             len,
             cycles,
             mode,
-            mnemonic: None,
+            unofficial_name: None,
         }
     }
 
@@ -141,7 +141,7 @@ impl OpCode {
             len,
             cycles,
             mode,
-            mnemonic: Option::from(String::from(mnemonic)),
+            unofficial_name: Option::from(String::from(mnemonic)),
         }
     }
 }
@@ -332,10 +332,10 @@ lazy_static! {
         OpCode::new_unofficial(0x0B, Instruction::AAC, 2, 2, AddressingMode::Immediate, "*AAC"),
         OpCode::new_unofficial(0x2B, Instruction::AAC, 2, 2, AddressingMode::Immediate, "*AAC"),
 
-        OpCode::new_unofficial(0x87, Instruction::AAX, 2, 3, AddressingMode::ZeroPage, "*SAX"),
-        OpCode::new_unofficial(0x97, Instruction::AAX, 2, 4, AddressingMode::ZeroPage_Y, "*SAX"),
-        OpCode::new_unofficial(0x83, Instruction::AAX, 2, 6, AddressingMode::Indirect_X, "*SAX"),
-        OpCode::new_unofficial(0x8F, Instruction::AAX, 3, 4, AddressingMode::Absolute, "*SAX"),
+        OpCode::new_unofficial(0x87, Instruction::SAX, 2, 3, AddressingMode::ZeroPage, "*SAX"),
+        OpCode::new_unofficial(0x97, Instruction::SAX, 2, 4, AddressingMode::ZeroPage_Y, "*SAX"),
+        OpCode::new_unofficial(0x83, Instruction::SAX, 2, 6, AddressingMode::Indirect_X, "*SAX"),
+        OpCode::new_unofficial(0x8F, Instruction::SAX, 3, 4, AddressingMode::Absolute, "*SAX"),
 
         OpCode::new_unofficial(0x6B, Instruction::ARR, 2, 2, AddressingMode::Immediate, "*ARR"),
         OpCode::new_unofficial(0x4B, Instruction::ASR, 2, 2, AddressingMode::Immediate, "*ASR"),
@@ -367,13 +367,13 @@ lazy_static! {
         OpCode::new_unofficial(0xE2, Instruction::DOP, 2, 2, AddressingMode::Immediate, "*NOP"),
         OpCode::new_unofficial(0xF4, Instruction::DOP, 2, 4, AddressingMode::ZeroPage_X, "*NOP"),
 
-        OpCode::new_unofficial(0xE7, Instruction::ISC, 2, 5, AddressingMode::ZeroPage, "*ISC"),
-        OpCode::new_unofficial(0xF7, Instruction::ISC, 2, 6, AddressingMode::ZeroPage_X, "*ISC"),
-        OpCode::new_unofficial(0xEF, Instruction::ISC, 3, 6, AddressingMode::Absolute, "*ISC"),
-        OpCode::new_unofficial(0xFF, Instruction::ISC, 3, 7, AddressingMode::Absolute_Y, "*ISC"),
-        OpCode::new_unofficial(0xFB, Instruction::ISC, 3, 7, AddressingMode::Absolute_X, "*ISC"),
-        OpCode::new_unofficial(0xE3, Instruction::ISC, 2, 8, AddressingMode::Indirect_X, "*ISC"),
-        OpCode::new_unofficial(0xF3, Instruction::ISC, 2, 9, AddressingMode::Indirect_Y, "*ISC"),
+        OpCode::new_unofficial(0xE7, Instruction::ISB, 2, 5, AddressingMode::ZeroPage, "*ISB"),
+        OpCode::new_unofficial(0xF7, Instruction::ISB, 2, 6, AddressingMode::ZeroPage_X, "*ISB"),
+        OpCode::new_unofficial(0xEF, Instruction::ISB, 3, 6, AddressingMode::Absolute, "*ISB"),
+        OpCode::new_unofficial(0xFB, Instruction::ISB, 3, 7, AddressingMode::Absolute_Y, "*ISB"),
+        OpCode::new_unofficial(0xFF, Instruction::ISB, 3, 7, AddressingMode::Absolute_X, "*ISB"),
+        OpCode::new_unofficial(0xE3, Instruction::ISB, 2, 8, AddressingMode::Indirect_X, "*ISB"),
+        OpCode::new_unofficial(0xF3, Instruction::ISB, 2, 9, AddressingMode::Indirect_Y, "*ISB"),
 
         OpCode::new_unofficial(0x02, Instruction::KIL, 1, 0, AddressingMode::NoneAddressing, "*KIL"),
         OpCode::new_unofficial(0x12, Instruction::KIL, 1, 0, AddressingMode::NoneAddressing, "*KIL"),

@@ -127,7 +127,7 @@ pub fn trace(cpu: &CPU) -> String {
         .collect::<Vec<String>>()
         .join(" ");
 
-    let instruction = if let Some(mnemonic) = ops.mnemonic.clone() {
+    let instruction = if let Some(mnemonic) = ops.unofficial_name.clone() {
         mnemonic
     } else {
         format!(" {:#?}", ops.instruction)

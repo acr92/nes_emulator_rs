@@ -57,7 +57,7 @@ impl Bus {
         Bus {
             cpu_vram: [0; CPU_VRAM_SIZE],
             ppu: [0; PPU_REGISTERS_SIZE],
-            apu: [0; APU_REGISTERS_SIZE],
+            apu: [0xFF; APU_REGISTERS_SIZE],
             rom: None,
         }
     }
@@ -109,8 +109,7 @@ impl Mem for Bus {
                 0
             }
             APU_REGISTERS_START..=APU_REGISTERS_END => {
-                //todo!("APU is not supported yet")
-                0
+                self.apu[(addr - APU_REGISTERS_START) as usize]
             }
             PRG_START..=PRG_END => self.read_prg_rom(addr),
             _ => {
@@ -128,6 +127,9 @@ impl Mem for Bus {
             }
             PPU_REGISTERS_START..=PPU_REGISTERS_MIRRORS_END => {
                 //todo!("PPU is not supported yet")
+            }
+            APU_REGISTERS_START..=APU_REGISTERS_END => {
+                self.apu[(addr - APU_REGISTERS_START) as usize] = value;
             }
             PRG_START..=PRG_END => {
                 panic!("Attempt to write to Cartridge ROM space")
