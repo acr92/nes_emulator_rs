@@ -27,7 +27,8 @@
 // |_______________| $0000 |_______________|
 
 use crate::cartridge::Rom;
-use crate::ppu::PPU;
+use core::mem::Mem;
+use ppu::PPU;
 
 const CPU_VRAM_SIZE: usize = 0x800;
 const RAM_START: u16 = 0x0000;
@@ -39,6 +40,7 @@ const PPU_REGISTERS_SIZE: usize = 0x08;
 const PPU_REGISTERS_END: u16 = PPU_REGISTERS_START + (PPU_REGISTERS_SIZE as u16) - 1;
 const PPU_REGISTERS_MIRRORS_START: u16 = PPU_REGISTERS_END + 1;
 const PPU_REGISTERS_MIRRORS_END: u16 = 0x3FFF;
+const PPU_REGISTER_OAMDMA: u16 = 0x4014;
 
 const APU_REGISTERS_START: u16 = 0x4000;
 const APU_REGISTERS_SIZE: usize = 0x18 + 0x08;
@@ -65,25 +67,6 @@ impl Bus {
     }
 }
 
-pub trait Mem {
-    fn mem_read(&self, addr: u16) -> u8;
-
-    fn mem_write(&mut self, addr: u16, value: u8);
-
-    fn mem_read_u16(&self, addr: u16) -> u16 {
-        let lo = self.mem_read(addr) as u16;
-        let hi = self.mem_read(addr.wrapping_add(1)) as u16;
-        (hi << 8) | (lo as u16)
-    }
-
-    fn mem_write_u16(&mut self, addr: u16, value: u16) {
-        let hi = (value >> 8) as u8;
-        let lo = (value & 0xFF) as u8;
-        self.mem_write(addr, lo);
-        self.mem_write(addr.wrapping_add(1), hi);
-    }
-}
-
 impl Bus {
     fn read_prg_rom(&self, mut addr: u16) -> u8 {
         if let Some(rom) = &self.rom {
@@ -105,8 +88,8 @@ impl Mem for Bus {
                 let mirror_down_addr = addr & RAM_MIRRORS_MASK;
                 self.cpu_vram[mirror_down_addr as usize]
             }
-            PPU_REGISTERS_START..=PPU_REGISTERS_END => {
-                self.ppu.mem_read(addr - PPU_REGISTERS_START)
+            PPU_REGISTERS_START..=PPU_REGISTERS_END | PPU_REGISTER_OAMDMA => {
+                self.ppu.mem_read(addr)
             }
             PPU_REGISTERS_MIRRORS_START..=PPU_REGISTERS_MIRRORS_END => {
                 self.mem_read(addr & PPU_REGISTERS_END)
@@ -128,8 +111,8 @@ impl Mem for Bus {
                 let mirror_down_addr = addr & RAM_MIRRORS_MASK;
                 self.cpu_vram[mirror_down_addr as usize] = value;
             }
-            PPU_REGISTERS_START..=PPU_REGISTERS_END => {
-                self.ppu.mem_write(addr - PPU_REGISTERS_START, value)
+            PPU_REGISTERS_START..=PPU_REGISTERS_END | PPU_REGISTER_OAMDMA => {
+                self.ppu.mem_write(addr, value)
             }
             PPU_REGISTERS_MIRRORS_START..=PPU_REGISTERS_MIRRORS_END => {
                 self.mem_write(addr & PPU_REGISTERS_END, value)

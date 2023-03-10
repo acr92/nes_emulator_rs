@@ -1,8 +1,8 @@
-use crate::bus::Mem;
 use crate::cpu::CPU;
 use crate::opcodes;
 use crate::opcodes::{AddressingMode, Instruction, OpCode};
 use crate::register::RegisterField;
+use core::mem::Mem;
 
 pub fn trace(cpu: &CPU) -> String {
     let ref opscodes = *opcodes::OPCODES_MAP;
@@ -159,10 +159,11 @@ fn is_jmp_instruction(ops: &&OpCode) -> bool {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::bus::{Bus, Mem};
+    use crate::bus::Bus;
     use crate::cpu::CPU;
-    use crate::ppu::PPU;
     use crate::register::RegisterField;
+    use core::mem::Mem;
+    use ppu::PPU;
 
     #[test]
     fn test_format_trace() {

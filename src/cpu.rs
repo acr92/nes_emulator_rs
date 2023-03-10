@@ -1,8 +1,8 @@
 use crate::bus::Bus;
-use crate::bus::Mem;
 use crate::opcodes;
 use crate::opcodes::{is_addressing_absolute, AddressingMode, Instruction, OpCode};
 use crate::register::{CpuFlags, Register, RegisterField, STACK};
+use core::mem::Mem;
 
 pub struct CPU {
     pub register: Register,
@@ -552,12 +552,13 @@ fn ror(data: u8, carry: bool) -> (u8, bool) {
 
 #[cfg(test)]
 mod test {
-    use crate::bus::{Bus, Mem};
+    use crate::bus::Bus;
     use crate::cpu::{CpuFlags, CPU};
     use crate::opcodes;
     use crate::opcodes::AddressingMode;
-    use crate::ppu::PPU;
     use crate::register::{RegisterField, STACK_RESET};
+    use core::mem::Mem;
+    use ppu::PPU;
 
     fn create() -> CPU {
         let ppu = PPU::new();

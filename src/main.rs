@@ -1,9 +1,9 @@
 use crate::bus::Bus;
 use crate::cartridge::Rom;
 use crate::cpu::CPU;
-use crate::ppu::PPU;
 use crate::trace::trace;
-use bus::Mem;
+use core::mem::Mem;
+use ppu::PPU;
 use rand::Rng;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -15,7 +15,6 @@ mod bus;
 mod cartridge;
 mod cpu;
 mod opcodes;
-mod ppu;
 mod register;
 mod trace;
 
