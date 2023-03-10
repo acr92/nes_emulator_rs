@@ -1,9 +1,9 @@
 pub trait Mem {
-    fn mem_read(&self, addr: u16) -> u8;
+    fn mem_read(&mut self, addr: u16) -> u8;
 
     fn mem_write(&mut self, addr: u16, value: u8);
 
-    fn mem_read_u16(&self, addr: u16) -> u16 {
+    fn mem_read_u16(&mut self, addr: u16) -> u16 {
         let lo = self.mem_read(addr) as u16;
         let hi = self.mem_read(addr.wrapping_add(1)) as u16;
         (hi << 8) | (lo as u16)
@@ -32,7 +32,7 @@ mod test {
     }
 
     impl Mem for Test {
-        fn mem_read(&self, addr: u16) -> u8 {
+        fn mem_read(&mut self, addr: u16) -> u8 {
             self.memory[addr as usize]
         }
 

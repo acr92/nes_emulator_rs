@@ -4,7 +4,7 @@ use crate::opcodes::{AddressingMode, Instruction, OpCode};
 use crate::register::RegisterField;
 use core::mem::Mem;
 
-pub fn trace(cpu: &CPU) -> String {
+pub fn trace(cpu: &mut CPU) -> String {
     let ref opscodes = *opcodes::OPCODES_MAP;
 
     let code = cpu.mem_read(cpu.register.pc);

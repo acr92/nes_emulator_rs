@@ -1,6 +1,6 @@
 use crate::bus::Bus;
 use crate::opcodes;
-use crate::opcodes::{is_addressing_absolute, AddressingMode, Instruction, OpCode};
+use crate::opcodes::{is_addressing_absolute, AddressingMode, Instruction};
 use crate::register::{CpuFlags, Register, RegisterField, STACK};
 use core::mem::Mem;
 
@@ -10,7 +10,7 @@ pub struct CPU {
 }
 
 impl Mem for CPU {
-    fn mem_read(&self, addr: u16) -> u8 {
+    fn mem_read(&mut self, addr: u16) -> u8 {
         self.bus.mem_read(addr)
     }
 
@@ -466,7 +466,7 @@ impl CPU {
         self.register.pc = addr;
     }
 
-    pub fn get_absolute_address(&self, mode: &AddressingMode, addr: u16) -> u16 {
+    pub fn get_absolute_address(&mut self, mode: &AddressingMode, addr: u16) -> u16 {
         match mode {
             AddressingMode::ZeroPage => self.mem_read(addr) as u16,
 
@@ -518,7 +518,7 @@ impl CPU {
         }
     }
 
-    pub fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
+    pub fn get_operand_address(&mut self, mode: &AddressingMode) -> u16 {
         match mode {
             AddressingMode::Immediate => self.register.pc,
             _ => self.get_absolute_address(mode, self.register.pc),
@@ -1417,9 +1417,10 @@ mod test {
     fn test_immediate_mode() {
         let mut cpu = create();
         cpu.register.pc = 0x200;
+        let value = cpu.get_operand_address(&AddressingMode::Immediate);
         assert_eq!(
             cpu.register.pc,
-            cpu.get_operand_address(&AddressingMode::Immediate)
+            value
         );
     }
 

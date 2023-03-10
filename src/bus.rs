@@ -82,7 +82,7 @@ impl Bus {
 }
 
 impl Mem for Bus {
-    fn mem_read(&self, addr: u16) -> u8 {
+    fn mem_read(&mut self, addr: u16) -> u8 {
         match addr {
             RAM_START..=RAM_MIRRORS_END => {
                 let mirror_down_addr = addr & RAM_MIRRORS_MASK;
@@ -136,7 +136,7 @@ mod tests {
 
     #[test]
     fn test_ram_read() {
-        let bus = Bus::new(PPU::new());
+        let mut bus = Bus::new(PPU::new());
         let value = bus.mem_read(0x0001);
         assert_eq!(value, 0);
     }
@@ -159,30 +159,38 @@ mod tests {
     fn test_ram_read_and_write_mirror() {
         let mut bus = Bus::new(PPU::new());
         bus.mem_write(0x000, 0x01);
-        bus.mem_write(0x800, bus.mem_read(0x800) + 1);
-        bus.mem_write(0x1000, bus.mem_read(0x1000) + 1);
-        bus.mem_write(0x1800, bus.mem_read(0x1800) + 1);
+
+        let value = bus.mem_read(0x800) + 1;
+        bus.mem_write(0x800, value);
+
+        let value = bus.mem_read(0x1000) + 1;
+        bus.mem_write(0x1000, value);
+
+        let value = bus.mem_read(0x1800) + 1;
+        bus.mem_write(0x1800, value);
+
         assert_eq!(bus.mem_read(0x1800), 4);
     }
 
     #[test]
     fn test_ppu_read() {
-        let bus = Bus::new(PPU::new());
-        assert_eq!(bus.mem_read(0x2007), 0x00);
+        let ppu = PPU::new();
+        let mut bus = Bus::new(ppu);
+        assert_eq!(bus.mem_read(0x2004), 0x00);
     }
 
     #[test]
     fn test_ppu_write() {
         let mut bus = Bus::new(PPU::new());
-        bus.mem_write(0x2007, 0xBB);
-        assert_eq!(bus.mem_read(0x2007), 0xBB);
+        bus.mem_write(0x2004, 0xBB);
+        assert_eq!(bus.mem_read(0x2004), 0xBB);
     }
 
     #[test]
     fn test_ppu_mask() {
         let mut bus = Bus::new(PPU::new());
-        bus.mem_write(0x200F, 0xBB);
-        assert_eq!(bus.mem_read(0x2007), 0xBB)
+        bus.mem_write(0x200C, 0xBB);
+        assert_eq!(bus.mem_read(0x2004), 0xBB)
     }
 
     #[test]
