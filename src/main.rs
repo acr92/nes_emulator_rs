@@ -126,6 +126,9 @@ fn main() {
     let mut rng = rand::thread_rng();
 
     // TODO: Only use this when running nestest
+    cpu.bus.cycles = 7;
+    cpu.bus.ppu.cycles = 21;
+    cpu.bus.ppu.scanline = 0;
     cpu.register.pc = 0xC000;
 
     cpu.run_with_callback(move |cpu| {

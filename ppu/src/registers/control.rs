@@ -77,7 +77,7 @@ impl ControlRegister {
         }
     }
 
-    pub fn geenrate_vblank_nmi(&self) -> bool {
+    pub fn generate_vblank_nmi(&self) -> bool {
         return self.contains(ControlRegister::GENERATE_NMI_AT_VBI);
     }
 

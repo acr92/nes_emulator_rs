@@ -373,7 +373,7 @@ lazy_static! {
         OpCode::new_unofficial(0xFB, Instruction::ISB, 3, 7, AddressingMode::Absolute_Y, "*ISB"),
         OpCode::new_unofficial(0xFF, Instruction::ISB, 3, 7, AddressingMode::Absolute_X, "*ISB"),
         OpCode::new_unofficial(0xE3, Instruction::ISB, 2, 8, AddressingMode::Indirect_X, "*ISB"),
-        OpCode::new_unofficial(0xF3, Instruction::ISB, 2, 9, AddressingMode::Indirect_Y, "*ISB"),
+        OpCode::new_unofficial(0xF3, Instruction::ISB, 2, 8, AddressingMode::Indirect_Y, "*ISB"),
 
         OpCode::new_unofficial(0x02, Instruction::KIL, 1, 0, AddressingMode::NoneAddressing, "*KIL"),
         OpCode::new_unofficial(0x12, Instruction::KIL, 1, 0, AddressingMode::NoneAddressing, "*KIL"),
@@ -391,11 +391,11 @@ lazy_static! {
         OpCode::new_unofficial(0xBB, Instruction::LAR, 3, 4 /* +1 if PC */, AddressingMode::Absolute_Y, "*LAR"),
 
         OpCode::new_unofficial(0xA7, Instruction::LAX, 2, 3, AddressingMode::ZeroPage, "*LAX"),
-        OpCode::new_unofficial(0xB7, Instruction::LAX, 2, 3, AddressingMode::ZeroPage_Y, "*LAX"),
-        OpCode::new_unofficial(0xAF, Instruction::LAX, 3, 3, AddressingMode::Absolute, "*LAX"),
-        OpCode::new_unofficial(0xBF, Instruction::LAX, 3, 3, AddressingMode::Absolute_Y, "*LAX"),
-        OpCode::new_unofficial(0xA3, Instruction::LAX, 2, 3, AddressingMode::Indirect_X, "*LAX"),
-        OpCode::new_unofficial(0xB3, Instruction::LAX, 2, 3, AddressingMode::Indirect_Y, "*LAX"),
+        OpCode::new_unofficial(0xB7, Instruction::LAX, 2, 4, AddressingMode::ZeroPage_Y, "*LAX"),
+        OpCode::new_unofficial(0xAF, Instruction::LAX, 3, 4, AddressingMode::Absolute, "*LAX"),
+        OpCode::new_unofficial(0xBF, Instruction::LAX, 3, 4 /* +1 if PC */, AddressingMode::Absolute_Y, "*LAX"),
+        OpCode::new_unofficial(0xA3, Instruction::LAX, 2, 6, AddressingMode::Indirect_X, "*LAX"),
+        OpCode::new_unofficial(0xB3, Instruction::LAX, 2, 5 /* +1 if PC */, AddressingMode::Indirect_Y, "*LAX"),
 
         OpCode::new_unofficial(0x1A, Instruction::NOP, 1, 2, AddressingMode::NoneAddressing, "*NOP"),
         OpCode::new_unofficial(0x3A, Instruction::NOP, 1, 2, AddressingMode::NoneAddressing, "*NOP"),

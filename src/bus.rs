@@ -49,6 +49,7 @@ pub struct Bus {
     cpu_vram: [u8; CPU_VRAM_SIZE],
     pub ppu: PPU,
     pub rom: Option<Box<Rom>>,
+    pub cycles: usize,
 }
 
 impl Bus {
@@ -57,11 +58,10 @@ impl Bus {
             cpu_vram: [0; CPU_VRAM_SIZE],
             ppu,
             rom: None,
+            cycles: 0,
         }
     }
-}
 
-impl Bus {
     fn read_prg_rom(&self, mut addr: u16) -> u8 {
         if let Some(rom) = &self.rom {
             addr -= PRG_START;
@@ -72,6 +72,11 @@ impl Bus {
         } else {
             0xFF
         }
+    }
+
+    pub fn tick(&mut self, cycles: u8) {
+        self.cycles += cycles as usize;
+        self.ppu.tick(cycles * 3);
     }
 }
 
@@ -88,7 +93,7 @@ impl Mem for Bus {
             }
             0x4000..=0x4015 => {
                 // Ignore APU
-                0
+                0xFF
             }
             PRG_START..=PRG_END => self.read_prg_rom(addr),
             _ => {

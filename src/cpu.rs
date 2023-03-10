@@ -6,7 +6,7 @@ use core::mem::Mem;
 
 pub struct CPU {
     pub register: Register,
-    bus: Bus,
+    pub bus: Bus,
 }
 
 impl Mem for CPU {
@@ -17,6 +17,10 @@ impl Mem for CPU {
     fn mem_write(&mut self, addr: u16, value: u8) {
         self.bus.mem_write(addr, value)
     }
+}
+
+fn page_cross(a: u16, b: u16) -> bool {
+    (a & 0xFF00) != (b & 0xFF00)
 }
 
 impl CPU {
@@ -71,12 +75,19 @@ impl CPU {
                 }
                 Instruction::NOP => {}
                 Instruction::DOP => {}
-                Instruction::TOP => {}
+                Instruction::TOP => {
+                    if self.page_crossed(&opcode.mode) {
+                        self.bus.tick(1)
+                    }
+                }
 
                 // Logical Operations
-                Instruction::AND => self.logic(&opcode.mode, |a, b| a & b),
-                Instruction::EOR => self.logic(&opcode.mode, |a, b| a ^ b),
-                Instruction::ORA => self.logic(&opcode.mode, |a, b| a | b),
+                Instruction::AND => self
+                    .tick_on_page_cross(&opcode.mode, |cpu| cpu.logic(&opcode.mode, |a, b| a & b)),
+                Instruction::EOR => self
+                    .tick_on_page_cross(&opcode.mode, |cpu| cpu.logic(&opcode.mode, |a, b| a ^ b)),
+                Instruction::ORA => self
+                    .tick_on_page_cross(&opcode.mode, |cpu| cpu.logic(&opcode.mode, |a, b| a | b)),
                 Instruction::SAX => self.sax(&opcode.mode),
 
                 // Arithmetic Operations
@@ -122,9 +133,15 @@ impl CPU {
                 Instruction::PLP => self.plp(),
 
                 // Compare Operations
-                Instruction::CMP => self.compare(RegisterField::A, &opcode.mode),
-                Instruction::CPX => self.compare(RegisterField::X, &opcode.mode),
-                Instruction::CPY => self.compare(RegisterField::Y, &opcode.mode),
+                Instruction::CMP => self.tick_on_page_cross(&opcode.mode, |cpu| {
+                    cpu.compare(RegisterField::A, &opcode.mode)
+                }),
+                Instruction::CPX => self.tick_on_page_cross(&opcode.mode, |cpu| {
+                    cpu.compare(RegisterField::X, &opcode.mode)
+                }),
+                Instruction::CPY => self.tick_on_page_cross(&opcode.mode, |cpu| {
+                    cpu.compare(RegisterField::Y, &opcode.mode)
+                }),
 
                 // Clear & Set Registers
                 Instruction::CLC => self.register.status.remove(CpuFlags::CARRY),
@@ -169,6 +186,8 @@ impl CPU {
                 }
             }
 
+            self.bus.tick(opcode.cycles);
+
             if program_counter_state == self.register.pc {
                 self.register.pc = self.register.pc.wrapping_add((opcode.len - 1) as u16);
             }
@@ -184,6 +203,10 @@ impl CPU {
         let value = self.mem_read(addr);
 
         self.register.write(target, value);
+
+        if self.page_crossed(&mode) {
+            self.bus.tick(1)
+        }
     }
 
     fn increment_register(&mut self, target: RegisterField) {
@@ -233,6 +256,17 @@ impl CPU {
             .status
             .set(CpuFlags::CARRY, compare_with >= data);
         self.register.update_zero_and_negative_flags(result);
+    }
+
+    fn tick_on_page_cross<F>(&mut self, mode: &AddressingMode, mut function: F)
+    where
+        F: FnOnce(&mut CPU),
+    {
+        function(self);
+
+        if self.page_crossed(mode) {
+            self.bus.tick(1);
+        }
     }
 
     fn logic<F>(&mut self, mode: &AddressingMode, op: F)
@@ -420,8 +454,15 @@ impl CPU {
 
     fn branch(&mut self, condition: bool) {
         if condition {
+            self.bus.tick(1);
+
             let jump: i8 = self.mem_read(self.register.pc) as i8;
             let jump_addr = self.register.pc.wrapping_add(1).wrapping_add(jump as u16);
+
+            if page_cross(self.register.pc.wrapping_add(1), jump_addr) {
+                self.bus.tick(1);
+            }
+
             self.register.pc = jump_addr
         }
     }
@@ -464,6 +505,33 @@ impl CPU {
     fn rts(&mut self) {
         let addr = self.stack_pop_u16() + 1;
         self.register.pc = addr;
+    }
+
+    fn page_crossed(&mut self, mode: &AddressingMode) -> bool {
+        let addr = self.register.pc;
+
+        match mode {
+            AddressingMode::Absolute_X => {
+                let base = self.mem_read_u16(addr);
+                let addr = base.wrapping_add(self.register.read(RegisterField::X) as u16);
+                page_cross(base, addr)
+            }
+            AddressingMode::Absolute_Y => {
+                let base = self.mem_read_u16(addr);
+                let addr = base.wrapping_add(self.register.read(RegisterField::Y) as u16);
+                page_cross(base, addr)
+            }
+            AddressingMode::Indirect_Y => {
+                let base = self.mem_read(addr);
+
+                let lo = self.mem_read(base as u16);
+                let hi = self.mem_read((base as u8).wrapping_add(1) as u16);
+                let deref_base = (hi as u16) << 8 | (lo as u16);
+                let deref = deref_base.wrapping_add(self.register.read(RegisterField::Y) as u16);
+                page_cross(deref, deref_base)
+            }
+            _ => false,
+        }
     }
 
     pub fn get_absolute_address(&mut self, mode: &AddressingMode, addr: u16) -> u16 {

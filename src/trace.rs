@@ -138,13 +138,16 @@ pub fn trace(cpu: &mut CPU) -> String {
         .to_string();
 
     format!(
-        "{:47} A:{:02x} X:{:02x} Y:{:02x} P:{:02x} SP:{:02x}",
+        "{:47} A:{:02x} X:{:02x} Y:{:02x} P:{:02x} SP:{:02x} PPU:{:3},{:3} CYC:{}",
         asm_str,
         cpu.register.read(RegisterField::A),
         cpu.register.read(RegisterField::X),
         cpu.register.read(RegisterField::Y),
         cpu.register.status.bits(),
         cpu.register.sp,
+        cpu.bus.ppu.scanline,
+        cpu.bus.ppu.cycles,
+        cpu.bus.cycles
     )
     .to_ascii_uppercase()
 }
@@ -184,15 +187,15 @@ mod test {
             result.push(trace(cpu));
         });
         assert_eq!(
-            "0064  A2 01     LDX #$01                        A:01 X:02 Y:03 P:24 SP:FD",
+            "0064  A2 01     LDX #$01                        A:01 X:02 Y:03 P:24 SP:FD PPU:  0,  0 CYC:0",
             result[0]
         );
         assert_eq!(
-            "0066  CA        DEX                             A:01 X:01 Y:03 P:24 SP:FD",
+            "0066  CA        DEX                             A:01 X:01 Y:03 P:24 SP:FD PPU:  0,  6 CYC:2",
             result[1]
         );
         assert_eq!(
-            "0067  88        DEY                             A:01 X:00 Y:03 P:26 SP:FD",
+            "0067  88        DEY                             A:01 X:00 Y:03 P:26 SP:FD PPU:  0, 12 CYC:4",
             result[2]
         );
     }
@@ -218,7 +221,7 @@ mod test {
             result.push(trace(cpu));
         });
         assert_eq!(
-            "0064  11 33     ORA ($33),Y = 0400 @ 0400 = AA  A:00 X:00 Y:00 P:24 SP:FD",
+            "0064  11 33     ORA ($33),Y = 0400 @ 0400 = AA  A:00 X:00 Y:00 P:24 SP:FD PPU:  0,  0 CYC:0",
             result[0]
         );
     }

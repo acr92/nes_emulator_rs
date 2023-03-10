@@ -29,6 +29,9 @@ pub struct PPU {
 
     registers: Registers,
     internal_data_buf: u8,
+
+    pub scanline: u16,
+    pub cycles: usize,
 }
 
 impl PPU {
@@ -46,7 +49,34 @@ impl PPU {
 
             registers: Registers::new(),
             internal_data_buf: 0,
+
+            scanline: 0,
+            cycles: 0,
         }
+    }
+
+    pub fn tick(&mut self, cycles: u8) -> bool {
+        self.cycles += cycles as usize;
+        if self.cycles < 341 {
+            return false;
+        }
+
+        self.cycles = self.cycles - 341;
+        self.scanline += 1;
+
+        if self.scanline == 241 {
+            if self.registers.control.generate_vblank_nmi() {
+                self.registers.status.set_vblank_status(true);
+                todo!("Should trigger NMI interrupt")
+            }
+        }
+
+        if self.scanline >= 262 {
+            self.scanline = 0;
+            self.registers.status.reset_vblank_status();
+        }
+
+        true
     }
 
     fn increment_vram_addr(&mut self) {
