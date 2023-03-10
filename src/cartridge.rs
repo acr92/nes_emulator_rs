@@ -1,13 +1,8 @@
+use core::cartridge::Mirroring;
+
 const NES_TAG: [u8; 4] = [0x4E, 0x45, 0x53, 0x1A];
 const PRG_ROM_PAGE_SIZE: usize = 0x4000;
 const CHR_ROM_PAGE_SIZE: usize = 0x2000;
-
-#[derive(Debug, PartialEq)]
-pub enum Mirroring {
-    Vertical,
-    Horizontal,
-    FourScreen,
-}
 
 pub struct Rom {
     pub prg_rom: Vec<u8>,
@@ -56,7 +51,8 @@ impl Rom {
 
 #[cfg(test)]
 pub mod test {
-    use crate::cartridge::{Mirroring, Rom, CHR_ROM_PAGE_SIZE, PRG_ROM_PAGE_SIZE};
+    use crate::cartridge::{Rom, CHR_ROM_PAGE_SIZE, PRG_ROM_PAGE_SIZE};
+    use core::cartridge::Mirroring;
 
     struct TestRom {
         header: Vec<u8>,

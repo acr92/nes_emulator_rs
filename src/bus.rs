@@ -168,21 +168,21 @@ mod tests {
     #[test]
     fn test_ppu_read() {
         let bus = Bus::new(PPU::new());
-        assert_eq!(bus.mem_read(0x2000), 0x00);
+        assert_eq!(bus.mem_read(0x2007), 0x00);
     }
 
     #[test]
     fn test_ppu_write() {
         let mut bus = Bus::new(PPU::new());
-        bus.mem_write(0x2000, 0xBB);
-        assert_eq!(bus.mem_read(0x2000), 0xBB);
+        bus.mem_write(0x2007, 0xBB);
+        assert_eq!(bus.mem_read(0x2007), 0xBB);
     }
 
     #[test]
     fn test_ppu_mask() {
         let mut bus = Bus::new(PPU::new());
-        bus.mem_write(0x2008, 0xBB);
-        assert_eq!(bus.mem_read(0x2000), 0xBB)
+        bus.mem_write(0x200F, 0xBB);
+        assert_eq!(bus.mem_read(0x2007), 0xBB)
     }
 
     #[test]
