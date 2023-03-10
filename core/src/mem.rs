@@ -22,14 +22,12 @@ mod test {
     use crate::mem::Mem;
 
     struct Test {
-        memory: [u8; 32]
+        memory: [u8; 32],
     }
 
     impl Test {
         fn new() -> Self {
-            Test {
-                memory: [0; 32]
-            }
+            Test { memory: [0; 32] }
         }
     }
 

@@ -1,12 +1,10 @@
-use core::mem::Mem;
+use crate::register::{
+    is_read_allowed, is_write_allowed, RegisterField, Registers, PPU_REGISTERS_MAP,
+};
 use core::cartridge::Mirroring;
-use crate::register::Registers;
+use core::mem::Mem;
 
 mod register;
-
-const PPU_REGISTERS_START: u16 = 0x2000;
-const PPU_REGISTERS_SIZE: usize = 0x08;
-const PPU_REGISTERS_END: u16 = PPU_REGISTERS_START + (PPU_REGISTERS_SIZE as u16) - 1;
 
 const PALETTE_TABLE_SIZE: usize = 32;
 const PPU_VRAM_SIZE: usize = 2048;
@@ -40,21 +38,57 @@ impl PPU {}
 
 impl Mem for PPU {
     fn mem_read(&self, addr: u16) -> u8 {
-        match addr {
-            PPU_REGISTERS_START..=PPU_REGISTERS_END => self.registers.mem_read(addr),
-            _ => panic!("Handle read to addr {:04X}", addr),
+        let register = PPU_REGISTERS_MAP
+            .get(&addr)
+            .expect(&format!("Unexpected addr {:04X}", addr));
+
+        if !is_read_allowed(register) {
+            panic!("Tried to write to readonly {:#?}", register);
+        }
+
+        match register.field {
+            RegisterField::Status => self.registers.status.bits(),
+            RegisterField::OAMData => self.registers.oam_data,
+            RegisterField::Data => self.registers.data,
+            _ => panic!("Unexpected read on {:#?}", register),
         }
     }
 
     fn mem_write(&mut self, addr: u16, value: u8) {
-        match addr {
-            PPU_REGISTERS_START..=PPU_REGISTERS_END => self.registers.mem_write(addr, value),
-            _ => panic!("Handle write to addr {:04X}", addr),
+        let register = PPU_REGISTERS_MAP
+            .get(&addr)
+            .expect(&format!("Unexpected addr {:04X}", addr));
+
+        if !is_write_allowed(register) {
+            panic!("Tried to write to readonly {:#?}", register);
+        }
+
+        match register.field {
+            RegisterField::Controller => self.registers.set_controller(value),
+            RegisterField::Mask => self.registers.set_mask(value),
+            RegisterField::OAMAddress => self.registers.oam_address = value,
+            RegisterField::OAMData => self.registers.oam_data = value,
+            RegisterField::Scroll => self.registers.scroll = value,
+            RegisterField::Address => self.registers.address = value,
+            RegisterField::Data => self.registers.data = value,
+            RegisterField::OAMDMA => self.registers.oam_dma = value,
+            _ => panic!("Unexpected write on {:#?}", register),
         }
     }
 }
 
 #[cfg(test)]
 mod test {
+    use crate::PPU;
+    use core::mem::Mem;
 
+    #[ignore]
+    #[test]
+    fn test_memory_access_emulation_is_correct() {
+        let mut ppu = PPU::new();
+        ppu.mem_write(0x2006, 0x06);
+        ppu.mem_write(0x2006, 0x00);
+        assert_eq!(ppu.mem_read(0x2007), 0x00);
+        assert_eq!(ppu.mem_read(0x2007), 0xFF);
+    }
 }

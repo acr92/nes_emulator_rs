@@ -1,8 +1,28 @@
 use bitflags::bitflags;
 use core::mem::Mem;
-use std::collections::HashMap;
 use lazy_static::lazy_static;
+use std::collections::HashMap;
 
+lazy_static! {
+    pub(crate) static ref PPU_REGISTERS: Vec<Register> = vec![
+        Register::new(0x2000, RegisterField::Controller, RegisterAccess::WriteOnly),
+        Register::new(0x2001, RegisterField::Mask, RegisterAccess::WriteOnly),
+        Register::new(0x2002, RegisterField::Status, RegisterAccess::ReadOnly),
+        Register::new(0x2003, RegisterField::OAMAddress, RegisterAccess::WriteOnly),
+        Register::new(0x2004, RegisterField::OAMData, RegisterAccess::ReadWrite),
+        Register::new(0x2005, RegisterField::Scroll, RegisterAccess::WriteOnly),
+        Register::new(0x2006, RegisterField::Address, RegisterAccess::WriteOnly),
+        Register::new(0x2007, RegisterField::Data, RegisterAccess::ReadWrite),
+        Register::new(0x4014, RegisterField::OAMDMA, RegisterAccess::WriteOnly),
+    ];
+    pub(crate) static ref PPU_REGISTERS_MAP: HashMap<u16, &'static Register> = {
+        let mut map = HashMap::new();
+        for register in &*PPU_REGISTERS {
+            map.insert(register.address, register);
+        }
+        map
+    };
+}
 
 bitflags! {
     /// # Controller Register (PPUCTRL) https://www.nesdev.org/wiki/PPU_registers
@@ -95,9 +115,8 @@ bitflags! {
     }
 }
 
-
 #[derive(Debug, Clone, Copy)]
-enum RegisterField {
+pub enum RegisterField {
     Controller,
     Mask,
     Status,
@@ -116,65 +135,43 @@ enum RegisterAccess {
     WriteOnly,
 }
 
-fn is_read_allowed(access: RegisterAccess) -> bool {
-    return matches!(access, RegisterAccess::ReadWrite) ||
-        matches!(access, RegisterAccess::ReadOnly)
+pub(crate) fn is_read_allowed(register: &Register) -> bool {
+    return matches!(register.access, RegisterAccess::ReadWrite)
+        || matches!(register.access, RegisterAccess::ReadOnly);
 }
 
-fn is_write_allowed(access: RegisterAccess) -> bool {
-    return matches!(access, RegisterAccess::ReadWrite) ||
-        matches!(access, RegisterAccess::WriteOnly)
+pub(crate) fn is_write_allowed(register: &Register) -> bool {
+    return matches!(register.access, RegisterAccess::ReadWrite)
+        || matches!(register.access, RegisterAccess::WriteOnly);
 }
 
 #[derive(Debug)]
-struct Register {
-    absolute_address: u16,
-    field: RegisterField,
+pub(crate) struct Register {
+    pub address: u16,
+    pub field: RegisterField,
     access: RegisterAccess,
 }
 
 impl Register {
-    fn new(absolute_address: u16, field: RegisterField, access: RegisterAccess) -> Self {
+    fn new(address: u16, field: RegisterField, access: RegisterAccess) -> Self {
         Register {
-            absolute_address,
+            address,
             field,
             access,
         }
     }
 }
 
-lazy_static! {
-    static ref PPU_REGISTERS: Vec<Register> = vec![
-        Register::new(0x2000, RegisterField::Controller, RegisterAccess::WriteOnly),
-        Register::new(0x2001, RegisterField::Mask, RegisterAccess::WriteOnly),
-        Register::new(0x2002, RegisterField::Status, RegisterAccess::ReadOnly),
-        Register::new(0x2003, RegisterField::OAMAddress, RegisterAccess::WriteOnly),
-        Register::new(0x2004, RegisterField::OAMData, RegisterAccess::ReadWrite),
-        Register::new(0x2005, RegisterField::Scroll, RegisterAccess::WriteOnly),
-        Register::new(0x2006, RegisterField::Address, RegisterAccess::WriteOnly),
-        Register::new(0x2007, RegisterField::Data, RegisterAccess::ReadWrite),
-        Register::new(0x4014, RegisterField::OAMDMA, RegisterAccess::WriteOnly),
-    ];
-
-    static ref PPU_REGISTERS_MAP: HashMap<u16, &'static Register> = {
-        let mut map = HashMap::new();
-        for register in &*PPU_REGISTERS {
-            map.insert(register.absolute_address, register);
-        }
-        map
-    };
-}
-
-pub struct Registers {
-    controller: ControllerFlags,
-    mask: MaskFlags,
-    status: StatusFlags,
-    oam_address: u8,
-    oam_data: u8,
-    scroll: u8,
-    address: u8,
-    data: u8,
-    oam_dma: u8,
+pub(crate) struct Registers {
+    pub controller: ControllerFlags,
+    pub mask: MaskFlags,
+    pub status: StatusFlags,
+    pub oam_address: u8,
+    pub oam_data: u8,
+    pub scroll: u8,
+    pub address: u8,
+    pub data: u8,
+    pub oam_dma: u8,
 }
 
 impl Registers {
@@ -191,43 +188,12 @@ impl Registers {
             oam_dma: 0,
         }
     }
-}
 
-impl Mem for Registers {
-    fn mem_read(&self, addr: u16) -> u8 {
-        let register = PPU_REGISTERS_MAP.get(&addr)
-            .expect(&format!("Unexpected addr {:04X}", addr));
-
-        if !is_read_allowed(register.access) {
-            panic!("Tried to write to readonly {:#?}", register);
-        }
-
-        match register.field {
-            RegisterField::Status => self.status.bits,
-            RegisterField::OAMData => self.oam_data,
-            RegisterField::Data => self.data,
-            _ => panic!("Unexpected read on {:#?}", register)
-        }
+    pub fn set_controller(&mut self, bits: u8) {
+        self.controller.bits = bits
     }
 
-    fn mem_write(&mut self, addr: u16, value: u8) {
-        let register = PPU_REGISTERS_MAP.get(&addr)
-            .expect(&format!("Unexpected addr {:04X}", addr));
-
-        if !is_write_allowed(register.access) {
-            panic!("Tried to write to readonly {:#?}", register);
-        }
-
-        match register.field {
-            RegisterField::Controller => self.controller.bits = value,
-            RegisterField::Mask => self.mask.bits = value,
-            RegisterField::OAMAddress => self.oam_address = value,
-            RegisterField::OAMData => self.oam_data = value,
-            RegisterField::Scroll => self.scroll = value,
-            RegisterField::Address => self.address = value,
-            RegisterField::Data => self.data = value,
-            RegisterField::OAMDMA => self.oam_dma = value,
-            _ => panic!("Unexpected write on {:#?}", register)
-        }
+    pub fn set_mask(&mut self, bits: u8) {
+        self.mask.bits = bits
     }
 }
