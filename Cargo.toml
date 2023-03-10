@@ -12,3 +12,9 @@ rand = "0.8.5"
 sdl2 = "0.35.2"
 core = { path = "core" }
 ppu = { path = "ppu" }
+
+[workspace]
+members = [
+    "core",
+    "ppu",
+]
