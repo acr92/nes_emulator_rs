@@ -27,6 +27,7 @@
 // |_______________| $0000 |_______________|
 
 use crate::cartridge::Rom;
+use crate::ppu::PPU;
 
 const CPU_VRAM_SIZE: usize = 0x800;
 const RAM_START: u16 = 0x0000;
@@ -35,7 +36,8 @@ const RAM_MIRRORS_MASK: u16 = 0x800 - 1;
 
 const PPU_REGISTERS_START: u16 = 0x2000;
 const PPU_REGISTERS_SIZE: usize = 0x08;
-const PPU_REGISTERS_MIRRORS_MASK: u16 = PPU_REGISTERS_START + (PPU_REGISTERS_SIZE as u16) - 1;
+const PPU_REGISTERS_END: u16 = PPU_REGISTERS_START + (PPU_REGISTERS_SIZE as u16) - 1;
+const PPU_REGISTERS_MIRRORS_START: u16 = PPU_REGISTERS_END + 1;
 const PPU_REGISTERS_MIRRORS_END: u16 = 0x3FFF;
 
 const APU_REGISTERS_START: u16 = 0x4000;
@@ -47,17 +49,17 @@ const PRG_END: u16 = 0xFFFF;
 
 pub struct Bus {
     cpu_vram: [u8; CPU_VRAM_SIZE],
-    ppu: [u8; PPU_REGISTERS_SIZE],
     apu: [u8; APU_REGISTERS_SIZE],
+    pub ppu: PPU,
     pub rom: Option<Box<Rom>>,
 }
 
 impl Bus {
-    pub fn new() -> Self {
+    pub fn new(ppu: PPU) -> Self {
         Bus {
             cpu_vram: [0; CPU_VRAM_SIZE],
-            ppu: [0; PPU_REGISTERS_SIZE],
             apu: [0xFF; APU_REGISTERS_SIZE],
+            ppu,
             rom: None,
         }
     }
@@ -103,10 +105,11 @@ impl Mem for Bus {
                 let mirror_down_addr = addr & RAM_MIRRORS_MASK;
                 self.cpu_vram[mirror_down_addr as usize]
             }
-            PPU_REGISTERS_START..=PPU_REGISTERS_MIRRORS_END => {
-                let _mirror_down_addr = addr & PPU_REGISTERS_MIRRORS_MASK;
-                //todo!("PPU is not supported yet")
-                0
+            PPU_REGISTERS_START..=PPU_REGISTERS_END => {
+                self.ppu.mem_read(addr - PPU_REGISTERS_START)
+            }
+            PPU_REGISTERS_MIRRORS_START..=PPU_REGISTERS_MIRRORS_END => {
+                self.mem_read(addr & PPU_REGISTERS_END)
             }
             APU_REGISTERS_START..=APU_REGISTERS_END => {
                 self.apu[(addr - APU_REGISTERS_START) as usize]
@@ -125,8 +128,11 @@ impl Mem for Bus {
                 let mirror_down_addr = addr & RAM_MIRRORS_MASK;
                 self.cpu_vram[mirror_down_addr as usize] = value;
             }
-            PPU_REGISTERS_START..=PPU_REGISTERS_MIRRORS_END => {
-                //todo!("PPU is not supported yet")
+            PPU_REGISTERS_START..=PPU_REGISTERS_END => {
+                self.ppu.mem_write(addr - PPU_REGISTERS_START, value)
+            }
+            PPU_REGISTERS_MIRRORS_START..=PPU_REGISTERS_MIRRORS_END => {
+                self.mem_write(addr & PPU_REGISTERS_END, value)
             }
             APU_REGISTERS_START..=APU_REGISTERS_END => {
                 self.apu[(addr - APU_REGISTERS_START) as usize] = value;
@@ -147,28 +153,28 @@ mod tests {
 
     #[test]
     fn test_ram_read() {
-        let bus = Bus::new();
+        let bus = Bus::new(PPU::new());
         let value = bus.mem_read(0x0001);
         assert_eq!(value, 0);
     }
 
     #[test]
     fn test_ram_write() {
-        let mut bus = Bus::new();
+        let mut bus = Bus::new(PPU::new());
         bus.mem_write(0x0001, 0xAA);
         assert_eq!(bus.cpu_vram[0x0001], 0xAA);
     }
 
     #[test]
     fn test_ram_read_and_write() {
-        let mut bus = Bus::new();
+        let mut bus = Bus::new(PPU::new());
         bus.mem_write(0x800, 0xCA);
         assert_eq!(bus.mem_read(0x800), 0xCA);
     }
 
     #[test]
     fn test_ram_read_and_write_mirror() {
-        let mut bus = Bus::new();
+        let mut bus = Bus::new(PPU::new());
         bus.mem_write(0x000, 0x01);
         bus.mem_write(0x800, bus.mem_read(0x800) + 1);
         bus.mem_write(0x1000, bus.mem_read(0x1000) + 1);
@@ -176,25 +182,29 @@ mod tests {
         assert_eq!(bus.mem_read(0x1800), 4);
     }
 
-    #[ignore]
     #[test]
-    #[should_panic(expected = "PPU is not supported yet")]
     fn test_ppu_read() {
-        let bus = Bus::new();
-        let _value = bus.mem_read(0x2000);
+        let bus = Bus::new(PPU::new());
+        assert_eq!(bus.mem_read(0x2000), 0x00);
     }
 
-    #[ignore]
     #[test]
-    #[should_panic(expected = "PPU is not supported yet")]
     fn test_ppu_write() {
-        let mut bus = Bus::new();
+        let mut bus = Bus::new(PPU::new());
         bus.mem_write(0x2000, 0xBB);
+        assert_eq!(bus.mem_read(0x2000), 0xBB);
+    }
+
+    #[test]
+    fn test_ppu_mask() {
+        let mut bus = Bus::new(PPU::new());
+        bus.mem_write(0x2008, 0xBB);
+        assert_eq!(bus.mem_read(0x2000), 0xBB)
     }
 
     #[test]
     fn test_cartridge_read() {
-        let mut bus = Bus::new();
+        let mut bus = Bus::new(PPU::new());
         bus.rom = Some(Box::from(crate::cartridge::test::create_example_rom()));
         assert_eq!(bus.mem_read(PRG_START + 0x800), 0x01);
     }
@@ -202,7 +212,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Attempt to write to Cartridge ROM space")]
     fn test_cannot_write_to_cartridge() {
-        let mut bus = Bus::new();
+        let mut bus = Bus::new(PPU::new());
         bus.mem_write_u16(0xFFFC, 0x1234);
         assert_eq!(bus.mem_read_u16(0xFFFC), 0x1234);
     }

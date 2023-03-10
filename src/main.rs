@@ -1,6 +1,7 @@
 use crate::bus::Bus;
 use crate::cartridge::Rom;
 use crate::cpu::CPU;
+use crate::ppu::PPU;
 use crate::trace::trace;
 use bus::Mem;
 use rand::Rng;
@@ -14,6 +15,7 @@ mod bus;
 mod cartridge;
 mod cpu;
 mod opcodes;
+mod ppu;
 mod register;
 mod trace;
 
@@ -98,7 +100,8 @@ fn main() {
     let program = std::fs::read(filename).unwrap();
     let rom = Rom::new(&program).unwrap();
 
-    let mut bus = Bus::new();
+    let ppu = PPU::new();
+    let mut bus = Bus::new(ppu);
     bus.rom = Some(Box::from(rom));
     let mut cpu = CPU::new(bus);
     cpu.reset();
