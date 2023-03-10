@@ -561,7 +561,7 @@ mod test {
     use ppu::PPU;
 
     fn create() -> CPU {
-        let ppu = PPU::new();
+        let ppu = PPU::new_empty_rom();
         let bus = Bus::new(ppu);
         return CPU::new(bus);
     }
@@ -1418,10 +1418,7 @@ mod test {
         let mut cpu = create();
         cpu.register.pc = 0x200;
         let value = cpu.get_operand_address(&AddressingMode::Immediate);
-        assert_eq!(
-            cpu.register.pc,
-            value
-        );
+        assert_eq!(cpu.register.pc, value);
     }
 
     #[test]

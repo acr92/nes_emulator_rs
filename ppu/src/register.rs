@@ -1,10 +1,10 @@
-use bitflags::bitflags;
-use lazy_static::lazy_static;
-use std::collections::HashMap;
 use crate::registers::address::AddressRegister;
 use crate::registers::control::ControlRegister;
 use crate::registers::mask::MaskRegister;
+use crate::registers::scroll::ScrollRegister;
 use crate::registers::status::StatusRegister;
+use lazy_static::lazy_static;
+use std::collections::HashMap;
 
 lazy_static! {
     pub(crate) static ref PPU_REGISTERS: Vec<Register> = vec![
@@ -16,7 +16,6 @@ lazy_static! {
         Register::new(0x2005, RegisterField::Scroll, RegisterAccess::WriteOnly),
         Register::new(0x2006, RegisterField::Address, RegisterAccess::WriteOnly),
         Register::new(0x2007, RegisterField::Data, RegisterAccess::ReadWrite),
-        Register::new(0x4014, RegisterField::OAMDMA, RegisterAccess::WriteOnly),
     ];
     pub(crate) static ref PPU_REGISTERS_MAP: HashMap<u16, &'static Register> = {
         let mut map = HashMap::new();
@@ -37,7 +36,6 @@ pub enum RegisterField {
     Scroll,
     Address,
     Data,
-    OAMDMA,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -79,11 +77,9 @@ pub(crate) struct Registers {
     pub mask: MaskRegister,
     pub status: StatusRegister,
     pub oam_address: u8,
-    pub oam_data: u8,
-    pub scroll: u8,
+    pub scroll: ScrollRegister,
     pub address: AddressRegister,
     pub data: u8,
-    pub oam_dma: u8,
 }
 
 impl Registers {
@@ -93,11 +89,9 @@ impl Registers {
             mask: MaskRegister::new(),
             status: StatusRegister::new(),
             oam_address: 0,
-            oam_data: 0,
-            scroll: 0,
+            scroll: ScrollRegister::new(),
             address: AddressRegister::new(),
             data: 0,
-            oam_dma: 0,
         }
     }
 }

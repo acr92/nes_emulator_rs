@@ -28,7 +28,7 @@
 
 use crate::cartridge::Rom;
 use core::mem::Mem;
-use ppu::PPU;
+use ppu::{OAM_DATA_SIZE, PPU};
 
 const CPU_VRAM_SIZE: usize = 0x800;
 const RAM_START: u16 = 0x0000;
@@ -40,18 +40,13 @@ const PPU_REGISTERS_SIZE: usize = 0x08;
 const PPU_REGISTERS_END: u16 = PPU_REGISTERS_START + (PPU_REGISTERS_SIZE as u16) - 1;
 const PPU_REGISTERS_MIRRORS_START: u16 = PPU_REGISTERS_END + 1;
 const PPU_REGISTERS_MIRRORS_END: u16 = 0x3FFF;
-const PPU_REGISTER_OAMDMA: u16 = 0x4014;
-
-const APU_REGISTERS_START: u16 = 0x4000;
-const APU_REGISTERS_SIZE: usize = 0x18 + 0x08;
-const APU_REGISTERS_END: u16 = APU_REGISTERS_START + (APU_REGISTERS_SIZE as u16) - 1;
+const PPU_REGISTER_OAM_DMA: u16 = 0x4014;
 
 const PRG_START: u16 = 0x8000;
 const PRG_END: u16 = 0xFFFF;
 
 pub struct Bus {
     cpu_vram: [u8; CPU_VRAM_SIZE],
-    apu: [u8; APU_REGISTERS_SIZE],
     pub ppu: PPU,
     pub rom: Option<Box<Rom>>,
 }
@@ -60,7 +55,6 @@ impl Bus {
     pub fn new(ppu: PPU) -> Self {
         Bus {
             cpu_vram: [0; CPU_VRAM_SIZE],
-            apu: [0xFF; APU_REGISTERS_SIZE],
             ppu,
             rom: None,
         }
@@ -88,14 +82,13 @@ impl Mem for Bus {
                 let mirror_down_addr = addr & RAM_MIRRORS_MASK;
                 self.cpu_vram[mirror_down_addr as usize]
             }
-            PPU_REGISTERS_START..=PPU_REGISTERS_END | PPU_REGISTER_OAMDMA => {
-                self.ppu.mem_read(addr)
-            }
+            PPU_REGISTERS_START..=PPU_REGISTERS_END => self.ppu.mem_read(addr),
             PPU_REGISTERS_MIRRORS_START..=PPU_REGISTERS_MIRRORS_END => {
                 self.mem_read(addr & PPU_REGISTERS_END)
             }
-            APU_REGISTERS_START..=APU_REGISTERS_END => {
-                self.apu[(addr - APU_REGISTERS_START) as usize]
+            0x4000..=0x4015 => {
+                // Ignore APU
+                0
             }
             PRG_START..=PRG_END => self.read_prg_rom(addr),
             _ => {
@@ -111,14 +104,21 @@ impl Mem for Bus {
                 let mirror_down_addr = addr & RAM_MIRRORS_MASK;
                 self.cpu_vram[mirror_down_addr as usize] = value;
             }
-            PPU_REGISTERS_START..=PPU_REGISTERS_END | PPU_REGISTER_OAMDMA => {
-                self.ppu.mem_write(addr, value)
+            PPU_REGISTERS_START..=PPU_REGISTERS_END => self.ppu.mem_write(addr, value),
+            PPU_REGISTER_OAM_DMA => {
+                let mut buffer: [u8; OAM_DATA_SIZE] = [0; OAM_DATA_SIZE];
+                let hi: u16 = (value as u16) << 8;
+                for i in 0..OAM_DATA_SIZE {
+                    buffer[i as usize] = self.mem_read(hi + (i as u16));
+                }
+
+                self.ppu.write_oam_dma(&buffer);
             }
             PPU_REGISTERS_MIRRORS_START..=PPU_REGISTERS_MIRRORS_END => {
                 self.mem_write(addr & PPU_REGISTERS_END, value)
             }
-            APU_REGISTERS_START..=APU_REGISTERS_END => {
-                self.apu[(addr - APU_REGISTERS_START) as usize] = value;
+            0x4000..=0x4013 | 0x4015 => {
+                // Ignore APU
             }
             PRG_START..=PRG_END => {
                 panic!("Attempt to write to Cartridge ROM space")
@@ -136,28 +136,28 @@ mod tests {
 
     #[test]
     fn test_ram_read() {
-        let mut bus = Bus::new(PPU::new());
+        let mut bus = Bus::new(PPU::new_empty_rom());
         let value = bus.mem_read(0x0001);
         assert_eq!(value, 0);
     }
 
     #[test]
     fn test_ram_write() {
-        let mut bus = Bus::new(PPU::new());
+        let mut bus = Bus::new(PPU::new_empty_rom());
         bus.mem_write(0x0001, 0xAA);
         assert_eq!(bus.cpu_vram[0x0001], 0xAA);
     }
 
     #[test]
     fn test_ram_read_and_write() {
-        let mut bus = Bus::new(PPU::new());
+        let mut bus = Bus::new(PPU::new_empty_rom());
         bus.mem_write(0x800, 0xCA);
         assert_eq!(bus.mem_read(0x800), 0xCA);
     }
 
     #[test]
     fn test_ram_read_and_write_mirror() {
-        let mut bus = Bus::new(PPU::new());
+        let mut bus = Bus::new(PPU::new_empty_rom());
         bus.mem_write(0x000, 0x01);
 
         let value = bus.mem_read(0x800) + 1;
@@ -174,28 +174,40 @@ mod tests {
 
     #[test]
     fn test_ppu_read() {
-        let ppu = PPU::new();
+        let ppu = PPU::new_empty_rom();
         let mut bus = Bus::new(ppu);
         assert_eq!(bus.mem_read(0x2004), 0x00);
     }
 
     #[test]
     fn test_ppu_write() {
-        let mut bus = Bus::new(PPU::new());
-        bus.mem_write(0x2004, 0xBB);
-        assert_eq!(bus.mem_read(0x2004), 0xBB);
+        let mut bus = Bus::new(PPU::new_empty_rom());
+        bus.mem_write(0x2006, 0x21);
+        bus.mem_write(0x2006, 0x00);
+        bus.mem_write(0x2007, 0xBB);
+
+        bus.mem_write(0x2006, 0x21);
+        bus.mem_write(0x2006, 0x00);
+        bus.mem_read(0x2007);
+        assert_eq!(bus.mem_read(0x2007), 0xBB);
     }
 
     #[test]
     fn test_ppu_mask() {
-        let mut bus = Bus::new(PPU::new());
-        bus.mem_write(0x200C, 0xBB);
-        assert_eq!(bus.mem_read(0x2004), 0xBB)
+        let mut bus = Bus::new(PPU::new_empty_rom());
+        bus.mem_write(0x200E, 0x21);
+        bus.mem_write(0x200E, 0x00);
+        bus.mem_write(0x200F, 0xBB);
+
+        bus.mem_write(0x200E, 0x21);
+        bus.mem_write(0x200E, 0x00);
+        bus.mem_read(0x200F);
+        assert_eq!(bus.mem_read(0x2007), 0xBB);
     }
 
     #[test]
     fn test_cartridge_read() {
-        let mut bus = Bus::new(PPU::new());
+        let mut bus = Bus::new(PPU::new_empty_rom());
         bus.rom = Some(Box::from(crate::cartridge::test::create_example_rom()));
         assert_eq!(bus.mem_read(PRG_START + 0x800), 0x01);
     }
@@ -203,7 +215,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Attempt to write to Cartridge ROM space")]
     fn test_cannot_write_to_cartridge() {
-        let mut bus = Bus::new(PPU::new());
+        let mut bus = Bus::new(PPU::new_empty_rom());
         bus.mem_write_u16(0xFFFC, 0x1234);
         assert_eq!(bus.mem_read_u16(0xFFFC), 0x1234);
     }

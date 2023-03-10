@@ -38,11 +38,47 @@ impl ControlRegister {
     }
 
     pub fn vram_address_increment(&self) -> u8 {
-        if !self.contains(ControlRegister::VRAM_ADD_INCREMENT) {
+        if self.contains(ControlRegister::VRAM_ADD_INCREMENT) {
+            32
+        } else {
+            1
+        }
+    }
+
+    pub fn sprite_pattern_table_address(&self) -> u16 {
+        if self.contains(ControlRegister::SPRITE_PATTERN_ADDR) {
+            0x1000
+        } else {
+            0x0000
+        }
+    }
+
+    pub fn background_pattern_table_address(&self) -> u16 {
+        if self.contains(ControlRegister::BACKGROUND_PATTERN_ADDR) {
+            0x1000
+        } else {
+            0x0000
+        }
+    }
+
+    pub fn sprite_size(&self) -> u8 {
+        if self.contains(ControlRegister::SPRITE_SIZE) {
+            16
+        } else {
+            8
+        }
+    }
+
+    pub fn master_slave_select(&self) -> u8 {
+        if self.contains(ControlRegister::PPU_MASTER_SLAVE_SELECT) {
             1
         } else {
-            32
+            0
         }
+    }
+
+    pub fn geenrate_vblank_nmi(&self) -> bool {
+        return self.contains(ControlRegister::GENERATE_NMI_AT_VBI);
     }
 
     pub fn update(&mut self, data: u8) {

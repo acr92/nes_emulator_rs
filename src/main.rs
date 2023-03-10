@@ -99,7 +99,7 @@ fn main() {
     let program = std::fs::read(filename).unwrap();
     let rom = Rom::new(&program).unwrap();
 
-    let ppu = PPU::new();
+    let ppu = PPU::new_empty_rom();
     let mut bus = Bus::new(ppu);
     bus.rom = Some(Box::from(rom));
     let mut cpu = CPU::new(bus);
