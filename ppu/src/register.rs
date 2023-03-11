@@ -79,7 +79,6 @@ pub(crate) struct Registers {
     pub oam_address: u8,
     pub scroll: ScrollRegister,
     pub address: AddressRegister,
-    pub data: u8,
 }
 
 impl Registers {
@@ -91,7 +90,6 @@ impl Registers {
             oam_address: 0,
             scroll: ScrollRegister::new(),
             address: AddressRegister::new(),
-            data: 0,
         }
     }
 }

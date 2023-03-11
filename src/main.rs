@@ -4,7 +4,7 @@ use emulator::cartridge::Rom;
 use emulator::cpu::CPU;
 use emulator::trace::trace;
 use ppu::PPU;
-use rand::Rng;
+use render::frame::Frame;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::{Color, PixelFormatEnum};
@@ -101,42 +101,44 @@ fn main() {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem
-        .window("Snake game", (32.0 * 10.0) as u32, (32.0 * 10.0) as u32)
+        .window(
+            "NES Emulator in Rust by acr92",
+            (256 * 3) as u32,
+            (240 * 3) as u32,
+        )
         .position_centered()
         .build()
         .unwrap();
 
     let mut canvas = window.into_canvas().present_vsync().build().unwrap();
     let mut event_pump = sdl_context.event_pump().unwrap();
-    canvas.set_scale(10.0, 10.0).unwrap();
+    canvas.set_scale(3.0, 3.0).unwrap();
 
     let creator = canvas.texture_creator();
     let mut texture = creator
-        .create_texture_target(PixelFormatEnum::RGB24, 32, 32)
+        .create_texture_target(PixelFormatEnum::RGB24, 256, 240)
         .unwrap();
 
-    let mut screen_state = [0 as u8; 32 * 32 * 3];
-    let mut rng = rand::thread_rng();
+    let vec = Rom::new(&program).unwrap().chr_rom;
+    let tile_frame = Frame::show_tiles(&vec, 1);
 
-    // TODO: Only use this when running nestest
-    cpu.bus.cycles = 7;
-    cpu.bus.ppu.cycles = 21;
-    cpu.bus.ppu.scanline = 0;
-    //cpu.register.pc = 0xC000;
+    texture.update(None, &tile_frame.data, 256 * 3).unwrap();
+    canvas.copy(&texture, None, None).unwrap();
+    canvas.present();
+
     cpu.reset();
+    loop {
+        for event in event_pump.poll_iter() {
+            match event {
+                Event::Quit { .. }
+                | Event::KeyDown {
+                    keycode: Some(Keycode::Escape),
+                    ..
+                } => std::process::exit(0),
 
-    cpu.run_with_callback(move |cpu| {
-        println!("{}", trace(cpu));
-
-        handle_user_input(cpu, &mut event_pump);
-        cpu.mem_write(0xFE, rng.gen_range(1..16));
-
-        if read_screen_state(cpu, &mut screen_state) {
-            texture.update(None, &screen_state, 32 * 3).unwrap();
-            canvas.copy(&texture, None, None).unwrap();
-            canvas.present();
+                _ => {}
+            }
         }
-
         std::thread::sleep(std::time::Duration::new(0, 10_000));
-    });
+    }
 }

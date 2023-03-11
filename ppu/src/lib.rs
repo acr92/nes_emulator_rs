@@ -18,6 +18,7 @@ const PALETTE_RAM_END: u16 = 0x3F1F;
 
 const PALETTE_TABLE_SIZE: usize = 32;
 const PPU_VRAM_SIZE: usize = 2048;
+pub const CHR_ROM_BANK_SIZE: usize = 0x1000;
 pub const OAM_DATA_SIZE: usize = 256;
 
 pub struct PPU {
