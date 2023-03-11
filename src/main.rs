@@ -1,8 +1,8 @@
-use crate::bus::Bus;
-use crate::cartridge::Rom;
-use crate::cpu::CPU;
-use crate::trace::trace;
 use core::mem::Mem;
+use emulator::bus::Bus;
+use emulator::cartridge::Rom;
+use emulator::cpu::CPU;
+use emulator::trace::trace;
 use ppu::PPU;
 use rand::Rng;
 use sdl2::event::Event;
@@ -10,13 +10,6 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::EventPump;
 use std::env;
-
-mod bus;
-mod cartridge;
-mod cpu;
-mod opcodes;
-mod register;
-mod trace;
 
 fn handle_user_input(cpu: &mut CPU, event_pump: &mut EventPump) {
     for event in event_pump.poll_iter() {
@@ -129,7 +122,8 @@ fn main() {
     cpu.bus.cycles = 7;
     cpu.bus.ppu.cycles = 21;
     cpu.bus.ppu.scanline = 0;
-    cpu.register.pc = 0xC000;
+    //cpu.register.pc = 0xC000;
+    cpu.reset();
 
     cpu.run_with_callback(move |cpu| {
         println!("{}", trace(cpu));

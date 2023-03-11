@@ -153,7 +153,10 @@ impl PPU {
     fn write_to_control(&mut self, value: u8) {
         let before_nmi_status = self.registers.control.generate_vblank_nmi();
         self.registers.control.update(value);
-        if !before_nmi_status && self.registers.control.generate_vblank_nmi() && self.registers.status.is_in_vblank() {
+        if !before_nmi_status
+            && self.registers.control.generate_vblank_nmi()
+            && self.registers.status.is_in_vblank()
+        {
             self.nmi_interrupt = Some(1)
         }
     }
@@ -195,7 +198,7 @@ impl Mem for PPU {
 
         if !is_read_allowed(register) {
             println!("Tried to read from write-only {:#?}", register);
-            return 0
+            return 0;
         }
 
         match register.field {

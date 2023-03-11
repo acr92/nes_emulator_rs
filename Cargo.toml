@@ -6,15 +6,18 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bitflags = "1.3.2"
-lazy_static = "1.4.0"
 rand = "0.8.5"
 sdl2 = "0.35.2"
 core = { path = "core" }
 ppu = { path = "ppu" }
+emulator = { path = "emulator" }
+
+[dev-dependencies]
+k9 = "0.11.6"
 
 [workspace]
 members = [
     "core",
     "ppu",
+    "emulator",
 ]

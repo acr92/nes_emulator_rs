@@ -2,7 +2,7 @@ use crate::bus::Bus;
 use crate::opcodes;
 use crate::opcodes::{is_addressing_absolute, AddressingMode, Instruction};
 use crate::register::{CpuFlags, Register, RegisterField, STACK};
-use core::mem::{Mem, VECTOR_RESET_HANDLER, VECTOR_NMI_INTERRUPT_HANDLER};
+use core::mem::{Mem, VECTOR_NMI_INTERRUPT_HANDLER, VECTOR_RESET_HANDLER};
 
 pub struct CPU {
     pub register: Register,
