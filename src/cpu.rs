@@ -2,7 +2,7 @@ use crate::bus::Bus;
 use crate::opcodes;
 use crate::opcodes::{is_addressing_absolute, AddressingMode, Instruction};
 use crate::register::{CpuFlags, Register, RegisterField, STACK};
-use core::mem::Mem;
+use core::mem::{Mem, VECTOR_RESET_HANDLER, VECTOR_NMI_INTERRUPT_HANDLER};
 
 pub struct CPU {
     pub register: Register,
@@ -33,7 +33,7 @@ impl CPU {
 
     pub fn reset(&mut self) {
         self.register = Register::new();
-        self.register.pc = self.mem_read_u16(0xFFFC);
+        self.register.pc = self.mem_read_u16(VECTOR_RESET_HANDLER);
     }
 
     #[cfg(test)]
@@ -59,6 +59,10 @@ impl CPU {
         let ref opcodes = *opcodes::OPCODES_MAP;
 
         loop {
+            if let Some(_nmi) = self.bus.poll_nmi_status() {
+                self.interrupt_nmi();
+            }
+
             callback(self);
 
             let code = self.mem_read(self.register.pc);
@@ -591,6 +595,19 @@ impl CPU {
             AddressingMode::Immediate => self.register.pc,
             _ => self.get_absolute_address(mode, self.register.pc),
         }
+    }
+
+    fn interrupt_nmi(&mut self) {
+        self.stack_push_u16(self.register.pc);
+        let mut flag = self.register.status.clone();
+        flag.set(CpuFlags::BREAK, false);
+        flag.set(CpuFlags::BREAK2, true);
+
+        self.stack_push(flag.bits());
+        self.register.status.insert(CpuFlags::INTERRUPT_DISABLE);
+
+        self.bus.tick(2);
+        self.register.pc = self.mem_read_u16(VECTOR_NMI_INTERRUPT_HANDLER);
     }
 }
 

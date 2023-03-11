@@ -78,6 +78,10 @@ impl Bus {
         self.cycles += cycles as usize;
         self.ppu.tick(cycles * 3);
     }
+
+    pub fn poll_nmi_status(&mut self) -> Option<u8> {
+        self.ppu.nmi_interrupt.take()
+    }
 }
 
 impl Mem for Bus {

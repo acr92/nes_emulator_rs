@@ -1,3 +1,6 @@
+pub const VECTOR_NMI_INTERRUPT_HANDLER: u16 = 0xFFFA;
+pub const VECTOR_RESET_HANDLER: u16 = 0xFFFC;
+
 pub trait Mem {
     fn mem_read(&mut self, addr: u16) -> u8;
 

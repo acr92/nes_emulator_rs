@@ -26,12 +26,12 @@ pub struct PPU {
     vram: [u8; PPU_VRAM_SIZE],
     oam_data: [u8; OAM_DATA_SIZE],
     mirroring: Mirroring,
-
     registers: Registers,
     internal_data_buf: u8,
 
     pub scanline: u16,
     pub cycles: usize,
+    pub nmi_interrupt: Option<u8>,
 }
 
 impl PPU {
@@ -52,6 +52,7 @@ impl PPU {
 
             scanline: 0,
             cycles: 0,
+            nmi_interrupt: None,
         }
     }
 
@@ -150,7 +151,11 @@ impl PPU {
     }
 
     fn write_to_control(&mut self, value: u8) {
-        self.registers.control.update(value)
+        let before_nmi_status = self.registers.control.generate_vblank_nmi();
+        self.registers.control.update(value);
+        if !before_nmi_status && self.registers.control.generate_vblank_nmi() && self.registers.status.is_in_vblank() {
+            self.nmi_interrupt = Some(1)
+        }
     }
 
     fn read_status(&mut self) -> u8 {
@@ -189,7 +194,8 @@ impl Mem for PPU {
             .expect(&format!("Unexpected addr {:04X}", addr));
 
         if !is_read_allowed(register) {
-            panic!("Tried to write to readonly {:#?}", register);
+            println!("Tried to read from write-only {:#?}", register);
+            return 0
         }
 
         match register.field {
