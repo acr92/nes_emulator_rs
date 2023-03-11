@@ -1,4 +1,5 @@
 use crate::frame::Frame;
+use crate::palette::background_palette;
 use ppu::PPU;
 
 pub mod frame;
@@ -25,20 +26,21 @@ pub fn render(ppu: &PPU, frame: &mut Frame) {
         let tile_x = i % 32;
         let tile_y = i / 32;
         let tile = &ppu.chr_rom[(bank + tile * 16) as usize..=(bank + tile * 16 + 15) as usize];
+        let palette = background_palette(ppu, tile_x, tile_y);
 
         for y in 0..=7 {
             let mut upper = tile[y];
             let mut lower = tile[y + 8];
 
             for x in (0..=7).rev() {
-                let value = (1 & upper) << 1 | (1 & lower);
+                let value = (1 & lower) << 1 | (1 & upper);
                 upper >>= 1;
                 lower >>= 1;
                 let rgb = match value {
-                    0 => palette::SYSTEM_PALLETE[0x01],
-                    1 => palette::SYSTEM_PALLETE[0x23],
-                    2 => palette::SYSTEM_PALLETE[0x27],
-                    3 => palette::SYSTEM_PALLETE[0x30],
+                    0 => palette::SYSTEM_PALLETE[ppu.palette_table[0] as usize],
+                    1 => palette::SYSTEM_PALLETE[palette[1] as usize],
+                    2 => palette::SYSTEM_PALLETE[palette[2] as usize],
+                    3 => palette::SYSTEM_PALLETE[palette[3] as usize],
                     _ => panic!("can't be"),
                 };
 

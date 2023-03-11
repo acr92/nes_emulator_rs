@@ -1,3 +1,5 @@
+use ppu::PPU;
+
 #[rustfmt::skip]
 
 pub static SYSTEM_PALLETE: [(u8,u8,u8); 64] = [
@@ -15,3 +17,24 @@ pub static SYSTEM_PALLETE: [(u8,u8,u8); 64] = [
     (0xFF, 0xEF, 0xA6), (0xFF, 0xF7, 0x9C), (0xD7, 0xE8, 0x95), (0xA6, 0xED, 0xAF), (0xA2, 0xF2, 0xDA),
     (0x99, 0xFF, 0xFC), (0xDD, 0xDD, 0xDD), (0x11, 0x11, 0x11), (0x11, 0x11, 0x11)
 ];
+
+pub(crate) fn background_palette(ppu: &PPU, tile_column: usize, tile_row: usize) -> [u8; 4] {
+    let table_index = tile_row / 4 * 8 + tile_column / 4;
+    let attribute_byte = ppu.vram[0x3C0 + table_index]; // TODO: stop using hardcoded NT1
+
+    let palette_index = match (tile_column % 4 / 2, tile_row % 4 / 2) {
+        (0, 0) => attribute_byte & 0b11,
+        (1, 0) => (attribute_byte >> 2) & 0b11,
+        (0, 1) => (attribute_byte >> 4) & 0b11,
+        (1, 1) => (attribute_byte >> 6) & 0b11,
+        (_, _) => panic!("should not happen"),
+    };
+
+    let palette_start = 1 + (palette_index as usize) * 4;
+    [
+        ppu.palette_table[0],
+        ppu.palette_table[palette_start],
+        ppu.palette_table[palette_start + 1],
+        ppu.palette_table[palette_start + 2],
+    ]
+}

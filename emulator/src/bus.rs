@@ -55,8 +55,7 @@ pub struct Bus<'call> {
 }
 
 impl<'a> Bus<'a> {
-    pub fn new<'call>(ppu: PPU) -> Self
-    {
+    pub fn new<'call>(ppu: PPU) -> Self {
         Bus::new_with_callback(ppu, |ppu| {})
     }
 

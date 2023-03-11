@@ -23,7 +23,7 @@ pub const OAM_DATA_SIZE: usize = 256;
 
 pub struct PPU {
     pub chr_rom: Vec<u8>,
-    palette_table: [u8; PALETTE_TABLE_SIZE],
+    pub palette_table: [u8; PALETTE_TABLE_SIZE],
     pub vram: [u8; PPU_VRAM_SIZE],
     oam_data: [u8; OAM_DATA_SIZE],
     mirroring: Mirroring,
