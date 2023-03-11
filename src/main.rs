@@ -1,7 +1,7 @@
 use emulator::bus::Bus;
 use emulator::cartridge::Rom;
 use emulator::cpu::CPU;
-use emulator::joypad::{Joypad, JoypadButton};
+use emulator::joypad::JoypadButton;
 use ppu::PPU;
 use render::frame::Frame;
 use sdl2::event::Event;

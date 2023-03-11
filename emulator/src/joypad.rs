@@ -56,3 +56,59 @@ impl Joypad {
         self.button_status.set(button, false);
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::joypad::{Joypad, JoypadButton};
+    use k9::assert_equal;
+
+    #[test]
+    fn test_joypad() {
+        let mut joypad = Joypad::new();
+
+        start_polling(&mut joypad);
+        stop_polling(&mut joypad);
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+
+        start_polling(&mut joypad);
+        joypad.set_pressed(JoypadButton::BUTTON_B);
+        stop_polling(&mut joypad);
+
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 1); // BUTTON_B index
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+
+        start_polling(&mut joypad);
+        joypad.set_released(JoypadButton::BUTTON_B);
+        stop_polling(&mut joypad);
+
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+        assert_equal!(joypad.read(), 0);
+    }
+
+    fn stop_polling(joypad: &mut Joypad) {
+        joypad.write(0);
+    }
+
+    fn start_polling(joypad: &mut Joypad) {
+        joypad.write(1);
+    }
+}
