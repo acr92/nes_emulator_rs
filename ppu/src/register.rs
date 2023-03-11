@@ -72,7 +72,7 @@ impl Register {
     }
 }
 
-pub(crate) struct Registers {
+pub struct Registers {
     pub control: ControlRegister,
     pub mask: MaskRegister,
     pub status: StatusRegister,

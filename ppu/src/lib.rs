@@ -24,10 +24,10 @@ pub const OAM_DATA_SIZE: usize = 256;
 pub struct PPU {
     pub chr_rom: Vec<u8>,
     palette_table: [u8; PALETTE_TABLE_SIZE],
-    vram: [u8; PPU_VRAM_SIZE],
+    pub vram: [u8; PPU_VRAM_SIZE],
     oam_data: [u8; OAM_DATA_SIZE],
     mirroring: Mirroring,
-    registers: Registers,
+    pub registers: Registers,
     internal_data_buf: u8,
 
     pub scanline: u16,
@@ -59,26 +59,28 @@ impl PPU {
 
     pub fn tick(&mut self, cycles: u8) -> bool {
         self.cycles += cycles as usize;
-        if self.cycles < 341 {
-            return false;
-        }
+        if self.cycles >= 341 {
+            self.cycles = self.cycles - 341;
+            self.scanline += 1;
 
-        self.cycles = self.cycles - 341;
-        self.scanline += 1;
-
-        if self.scanline == 241 {
-            if self.registers.control.generate_vblank_nmi() {
+            if self.scanline == 241 {
                 self.registers.status.set_vblank_status(true);
-                todo!("Should trigger NMI interrupt")
+                self.registers.status.set_sprite_zero_hit(false);
+                if self.registers.control.generate_vblank_nmi() {
+                    self.nmi_interrupt = Some(1)
+                }
+            }
+
+            if self.scanline >= 262 {
+                self.scanline = 0;
+                self.nmi_interrupt = None;
+                self.registers.status.set_sprite_zero_hit(false);
+                self.registers.status.reset_vblank_status();
+                return true;
             }
         }
 
-        if self.scanline >= 262 {
-            self.scanline = 0;
-            self.registers.status.reset_vblank_status();
-        }
-
-        true
+        return false;
     }
 
     fn increment_vram_addr(&mut self) {

@@ -45,20 +45,32 @@ const PPU_REGISTER_OAM_DMA: u16 = 0x4014;
 const PRG_START: u16 = 0x8000;
 const PRG_END: u16 = 0xFFFF;
 
-pub struct Bus {
+pub struct Bus<'call> {
     cpu_vram: [u8; CPU_VRAM_SIZE],
     pub ppu: PPU,
     pub rom: Option<Box<Rom>>,
+
     pub cycles: usize,
+    gameloop_callback: Box<dyn FnMut(&PPU) + 'call>,
 }
 
-impl Bus {
-    pub fn new(ppu: PPU) -> Self {
+impl<'a> Bus<'a> {
+    pub fn new<'call>(ppu: PPU) -> Self
+    {
+        Bus::new_with_callback(ppu, |ppu| {})
+    }
+
+    pub fn new_with_callback<'call, F>(ppu: PPU, gameloop_callback: F) -> Self
+    where
+        F: FnMut(&PPU) + 'call + 'a,
+    {
         Bus {
             cpu_vram: [0; CPU_VRAM_SIZE],
             ppu,
             rom: None,
+
             cycles: 0,
+            gameloop_callback: Box::from(gameloop_callback),
         }
     }
 
@@ -76,7 +88,12 @@ impl Bus {
 
     pub fn tick(&mut self, cycles: u8) {
         self.cycles += cycles as usize;
-        self.ppu.tick(cycles * 3);
+
+        let new_frame = self.ppu.tick(cycles * 3);
+
+        if new_frame {
+            (self.gameloop_callback)(&self.ppu);
+        }
     }
 
     pub fn poll_nmi_status(&mut self) -> Option<u8> {
@@ -84,7 +101,7 @@ impl Bus {
     }
 }
 
-impl Mem for Bus {
+impl Mem for Bus<'_> {
     fn mem_read(&mut self, addr: u16) -> u8 {
         match addr {
             RAM_START..=RAM_MIRRORS_END => {
@@ -95,7 +112,7 @@ impl Mem for Bus {
             PPU_REGISTERS_MIRRORS_START..=PPU_REGISTERS_MIRRORS_END => {
                 self.mem_read(addr & PPU_REGISTERS_END)
             }
-            0x4000..=0x4015 => {
+            0x4000..=0x4017 => {
                 // Ignore APU
                 0xFF
             }
@@ -126,7 +143,7 @@ impl Mem for Bus {
             PPU_REGISTERS_MIRRORS_START..=PPU_REGISTERS_MIRRORS_END => {
                 self.mem_write(addr & PPU_REGISTERS_END, value)
             }
-            0x4000..=0x4013 | 0x4015 => {
+            0x4000..=0x4013 | 0x4015..=0x4017 => {
                 // Ignore APU
             }
             PRG_START..=PRG_END => {

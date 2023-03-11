@@ -4,12 +4,12 @@ use crate::opcodes::{is_addressing_absolute, AddressingMode, Instruction};
 use crate::register::{CpuFlags, Register, RegisterField, STACK};
 use core::mem::{Mem, VECTOR_NMI_INTERRUPT_HANDLER, VECTOR_RESET_HANDLER};
 
-pub struct CPU {
+pub struct CPU<'a> {
     pub register: Register,
-    pub bus: Bus,
+    pub bus: Bus<'a>,
 }
 
-impl Mem for CPU {
+impl<'a> Mem for CPU<'a> {
     fn mem_read(&mut self, addr: u16) -> u8 {
         self.bus.mem_read(addr)
     }
@@ -23,8 +23,8 @@ fn page_cross(a: u16, b: u16) -> bool {
     (a & 0xFF00) != (b & 0xFF00)
 }
 
-impl CPU {
-    pub fn new(bus: Bus) -> Self {
+impl<'a> CPU<'a> {
+    pub fn new(bus: Bus) -> CPU {
         CPU {
             register: Register::new(),
             bus,
@@ -47,8 +47,7 @@ impl CPU {
         self.run()
     }
 
-    #[cfg(test)]
-    fn run(&mut self) {
+    pub fn run(&mut self) {
         self.run_with_callback(|_| {});
     }
 
@@ -262,7 +261,7 @@ impl CPU {
         self.register.update_zero_and_negative_flags(result);
     }
 
-    fn tick_on_page_cross<F>(&mut self, mode: &AddressingMode, mut function: F)
+    fn tick_on_page_cross<F>(&mut self, mode: &AddressingMode, function: F)
     where
         F: FnOnce(&mut CPU),
     {
@@ -645,7 +644,7 @@ mod test {
     use core::mem::Mem;
     use ppu::PPU;
 
-    fn create() -> CPU {
+    fn create() -> CPU<'static> {
         let ppu = PPU::new_empty_rom();
         let bus = Bus::new(ppu);
         return CPU::new(bus);

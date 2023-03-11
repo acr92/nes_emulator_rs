@@ -1,4 +1,4 @@
-pub(crate) struct AddressRegister {
+pub struct AddressRegister {
     value: (u8, u8),
     hi_ptr: bool,
 }

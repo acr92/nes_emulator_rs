@@ -92,12 +92,6 @@ fn main() {
     let program = std::fs::read(filename).unwrap();
     let rom = Rom::new(&program).unwrap();
 
-    let ppu = PPU::new_empty_rom();
-    let mut bus = Bus::new(ppu);
-    bus.rom = Some(Box::from(rom));
-    let mut cpu = CPU::new(bus);
-    cpu.reset();
-
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem
@@ -119,15 +113,15 @@ fn main() {
         .create_texture_target(PixelFormatEnum::RGB24, 256, 240)
         .unwrap();
 
-    let vec = Rom::new(&program).unwrap().chr_rom;
-    let tile_frame = Frame::show_tiles(&vec, 1);
+    let ppu = PPU::new(rom.chr_rom.clone(), rom.screen_mirroring);
+    let mut frame = Frame::new();
+    let mut bus = Bus::new_with_callback(ppu, move |ppu| {
+        render::render(ppu, &mut frame);
+        texture.update(None, &frame.data, 256 * 3).unwrap();
 
-    texture.update(None, &tile_frame.data, 256 * 3).unwrap();
-    canvas.copy(&texture, None, None).unwrap();
-    canvas.present();
+        canvas.copy(&texture, None, None).unwrap();
 
-    cpu.reset();
-    loop {
+        canvas.present();
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit { .. }
@@ -139,6 +133,10 @@ fn main() {
                 _ => {}
             }
         }
-        std::thread::sleep(std::time::Duration::new(0, 10_000));
-    }
+    });
+    bus.rom = Some(Box::from(rom));
+
+    let mut cpu = CPU::new(bus);
+    cpu.reset();
+    cpu.run();
 }
