@@ -1,12 +1,11 @@
 use emulator::bus::Bus;
 use emulator::cartridge::Rom;
 use emulator::cpu::CPU;
-use emulator::trace::trace;
 use ppu::PPU;
 use render::frame::Frame;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use sdl2::pixels::{Color, PixelFormatEnum};
+use sdl2::pixels::PixelFormatEnum;
 use std::env;
 
 fn main() {

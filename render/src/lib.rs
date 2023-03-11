@@ -1,5 +1,5 @@
 use crate::frame::Frame;
-use crate::palette::background_palette;
+use crate::palette::{background_palette, sprite_palette};
 use ppu::PPU;
 
 pub mod frame;
@@ -41,10 +41,54 @@ pub fn render(ppu: &PPU, frame: &mut Frame) {
                     1 => palette::SYSTEM_PALLETE[palette[1] as usize],
                     2 => palette::SYSTEM_PALLETE[palette[2] as usize],
                     3 => palette::SYSTEM_PALLETE[palette[3] as usize],
-                    _ => panic!("can't be"),
+                    _ => panic!("can't happen"),
                 };
 
                 frame.set_pixel(tile_x * 8 + x, tile_y * 8 + y, rgb)
+            }
+        }
+    }
+
+    for i in (0..ppu.oam_data.len()).step_by(4).rev() {
+        let tile_index = ppu.oam_data[i + 1] as u16;
+        let tile_x = ppu.oam_data[i + 3] as usize;
+        let tile_y = ppu.oam_data[i] as usize;
+
+        // TODO: here I'm sure we can make this a bit prettier
+        let flip_vertical = ppu.oam_data[i + 2] >> 7 & 1 == 1;
+        let flip_horizontal = ppu.oam_data[i + 2] >> 6 & 1 == 1;
+
+        let palette_index = ppu.oam_data[i + 2] & 0b11;
+        let sprite_palette = sprite_palette(ppu, palette_index);
+
+        let bank = ppu.registers.control.sprite_pattern_table_address();
+        let tile = &ppu.chr_rom
+            [(bank + tile_index * 16) as usize..=(bank + tile_index * 16 + 15) as usize];
+
+        for y in 0..=7 {
+            let mut upper = tile[y];
+            let mut lower = tile[y + 8];
+
+            for x in (0..=7).rev() {
+                let value = (1 & lower) << 1 | (1 & upper);
+                upper >>= 1;
+                lower >>= 1;
+
+                let rgb = match value {
+                    // 0 = transparent
+                    0 => continue,
+                    1 => palette::SYSTEM_PALLETE[sprite_palette[1] as usize],
+                    2 => palette::SYSTEM_PALLETE[sprite_palette[2] as usize],
+                    3 => palette::SYSTEM_PALLETE[sprite_palette[3] as usize],
+                    _ => panic!("can't happen"),
+                };
+
+                match (flip_horizontal, flip_vertical) {
+                    (false, false) => frame.set_pixel(tile_x + x, tile_y + y, rgb),
+                    (true, false) => frame.set_pixel(tile_x + 7 - x, tile_y + y, rgb),
+                    (false, true) => frame.set_pixel(tile_x + x, tile_y + 7 - y, rgb),
+                    (true, true) => frame.set_pixel(tile_x + 7 - x, tile_y + 7 - y, rgb),
+                }
             }
         }
     }

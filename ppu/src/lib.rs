@@ -14,7 +14,8 @@ const NAMETABLE_END: u16 = 0x2FFF;
 const NAMETABLE_MIRROR_START: u16 = 0x3000;
 const NAMETABLE_MIRROR_END: u16 = 0x3EFF;
 const PALETTE_RAM_START: u16 = 0x3F00;
-const PALETTE_RAM_END: u16 = 0x3F1F;
+const PALETTE_MASK: u16 = 0x3F20 - 1;
+const PALETTE_RAM_END: u16 = 0x3FFF;
 
 const PALETTE_TABLE_SIZE: usize = 32;
 const PPU_VRAM_SIZE: usize = 2048;
@@ -25,7 +26,7 @@ pub struct PPU {
     pub chr_rom: Vec<u8>,
     pub palette_table: [u8; PALETTE_TABLE_SIZE],
     pub vram: [u8; PPU_VRAM_SIZE],
-    oam_data: [u8; OAM_DATA_SIZE],
+    pub oam_data: [u8; OAM_DATA_SIZE],
     mirroring: Mirroring,
     pub registers: Registers,
     internal_data_buf: u8,
@@ -109,7 +110,7 @@ impl PPU {
                 addr
             ),
             PALETTE_RAM_START..=PALETTE_RAM_END => {
-                self.palette_table[(addr - PALETTE_RAM_START) as usize]
+                self.palette_table[((addr & PALETTE_MASK) - PALETTE_RAM_START) as usize]
             }
             _ => panic!("Unexpected access to mirrored space {:04X}", addr),
         }
@@ -128,7 +129,7 @@ impl PPU {
                 addr
             ),
             PALETTE_RAM_START..=PALETTE_RAM_END => {
-                self.palette_table[(addr - PALETTE_RAM_START) as usize] = value
+                self.palette_table[((addr & PALETTE_MASK) - PALETTE_RAM_START) as usize] = value
             }
             _ => panic!("Unexpected access to mirrored space {:04X}", addr),
         }

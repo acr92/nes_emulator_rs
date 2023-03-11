@@ -38,3 +38,13 @@ pub(crate) fn background_palette(ppu: &PPU, tile_column: usize, tile_row: usize)
         ppu.palette_table[palette_start + 2],
     ]
 }
+
+pub(crate) fn sprite_palette(ppu: &PPU, index: u8) -> [u8; 4] {
+    let start = 0x11 + (index * 4) as usize;
+    [
+        0,
+        ppu.palette_table[start],
+        ppu.palette_table[start + 1],
+        ppu.palette_table[start + 2],
+    ]
+}

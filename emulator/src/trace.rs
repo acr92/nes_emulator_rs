@@ -4,6 +4,20 @@ use crate::opcodes::{AddressingMode, Instruction, OpCode};
 use crate::register::RegisterField;
 use core::mem::Mem;
 
+pub fn trace_light(cpu: &mut CPU) -> String {
+    let ref opscodes = *opcodes::OPCODES_MAP;
+
+    let code = cpu.mem_read(cpu.register.pc);
+    let ops = opscodes
+        .get(&code)
+        .expect(format!("Unknown OP 0x{:02X}", code).as_str());
+
+    format!(
+        "{:04X} {:#?} F={:#?}",
+        cpu.register.pc, ops.instruction, cpu.register.status
+    )
+}
+
 pub fn trace(cpu: &mut CPU) -> String {
     let ref opscodes = *opcodes::OPCODES_MAP;
 

@@ -56,7 +56,7 @@ pub struct Bus<'call> {
 
 impl<'a> Bus<'a> {
     pub fn new<'call>(ppu: PPU) -> Self {
-        Bus::new_with_callback(ppu, |ppu| {})
+        Bus::new_with_callback(ppu, |_ppu| {})
     }
 
     pub fn new_with_callback<'call, F>(ppu: PPU, gameloop_callback: F) -> Self
@@ -111,9 +111,13 @@ impl Mem for Bus<'_> {
             PPU_REGISTERS_MIRRORS_START..=PPU_REGISTERS_MIRRORS_END => {
                 self.mem_read(addr & PPU_REGISTERS_END)
             }
-            0x4000..=0x4017 => {
+            0x4000..=0x4015 => {
                 // Ignore APU
                 0xFF
+            }
+            0x4016..=0x4017 => {
+                // No Joypads is pressed
+                0x00
             }
             PRG_START..=PRG_END => self.read_prg_rom(addr),
             _ => {
