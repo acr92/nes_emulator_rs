@@ -65,7 +65,7 @@ impl<'a> CPU<'a> {
             callback(self);
 
             let code = self.mem_read(self.register.pc);
-            self.register.pc += 1;
+            self.register.pc = self.register.pc.wrapping_add(1);
             let program_counter_state = self.register.pc;
 
             let opcode = opcodes

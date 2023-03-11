@@ -1,11 +1,13 @@
 use emulator::bus::Bus;
 use emulator::cartridge::Rom;
 use emulator::cpu::CPU;
+use emulator::joypad::{Joypad, JoypadButton};
 use ppu::PPU;
 use render::frame::Frame;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::PixelFormatEnum;
+use std::collections::HashMap;
 use std::env;
 
 fn main() {
@@ -31,6 +33,16 @@ fn main() {
         .build()
         .unwrap();
 
+    let mut key_map: HashMap<Keycode, JoypadButton> = HashMap::new();
+    key_map.insert(Keycode::Down, JoypadButton::DOWN);
+    key_map.insert(Keycode::Up, JoypadButton::UP);
+    key_map.insert(Keycode::Right, JoypadButton::RIGHT);
+    key_map.insert(Keycode::Left, JoypadButton::LEFT);
+    key_map.insert(Keycode::Space, JoypadButton::SELECT);
+    key_map.insert(Keycode::Return, JoypadButton::START);
+    key_map.insert(Keycode::A, JoypadButton::BUTTON_A);
+    key_map.insert(Keycode::S, JoypadButton::BUTTON_B);
+
     let mut canvas = window.into_canvas().present_vsync().build().unwrap();
     let mut event_pump = sdl_context.event_pump().unwrap();
     canvas.set_scale(3.0, 3.0).unwrap();
@@ -42,7 +54,7 @@ fn main() {
 
     let ppu = PPU::new(rom.chr_rom.clone(), rom.screen_mirroring);
     let mut frame = Frame::new();
-    let mut bus = Bus::new_with_callback(ppu, move |ppu| {
+    let mut bus = Bus::new_with_callback(ppu, move |ppu, joypad| {
         render::render(ppu, &mut frame);
         texture.update(None, &frame.data, 256 * 3).unwrap();
 
@@ -57,6 +69,16 @@ fn main() {
                     ..
                 } => std::process::exit(0),
 
+                Event::KeyDown { keycode, .. } => {
+                    if let Some(key) = key_map.get(&keycode.unwrap_or(Keycode::AcBack)) {
+                        joypad.set_pressed(*key);
+                    }
+                }
+                Event::KeyUp { keycode, .. } => {
+                    if let Some(key) = key_map.get(&keycode.unwrap_or(Keycode::AcBack)) {
+                        joypad.set_released(*key);
+                    }
+                }
                 _ => {}
             }
         }

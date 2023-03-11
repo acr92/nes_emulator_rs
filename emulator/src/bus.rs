@@ -27,6 +27,7 @@
 // |_______________| $0000 |_______________|
 
 use crate::cartridge::Rom;
+use crate::joypad::Joypad;
 use core::mem::Mem;
 use ppu::{OAM_DATA_SIZE, PPU};
 
@@ -42,6 +43,9 @@ const PPU_REGISTERS_MIRRORS_START: u16 = PPU_REGISTERS_END + 1;
 const PPU_REGISTERS_MIRRORS_END: u16 = 0x3FFF;
 const PPU_REGISTER_OAM_DMA: u16 = 0x4014;
 
+const JOYPAD_1_ADDR: u16 = 0x4016;
+const JOYPAD_2_ADDR: u16 = 0x4017;
+
 const PRG_START: u16 = 0x8000;
 const PRG_END: u16 = 0xFFFF;
 
@@ -49,24 +53,26 @@ pub struct Bus<'call> {
     cpu_vram: [u8; CPU_VRAM_SIZE],
     pub ppu: PPU,
     pub rom: Option<Box<Rom>>,
+    pub joypad1: Joypad,
 
     pub cycles: usize,
-    gameloop_callback: Box<dyn FnMut(&PPU) + 'call>,
+    gameloop_callback: Box<dyn FnMut(&PPU, &mut Joypad) + 'call>,
 }
 
 impl<'a> Bus<'a> {
     pub fn new<'call>(ppu: PPU) -> Self {
-        Bus::new_with_callback(ppu, |_ppu| {})
+        Bus::new_with_callback(ppu, |_ppu, _joypad| {})
     }
 
     pub fn new_with_callback<'call, F>(ppu: PPU, gameloop_callback: F) -> Self
     where
-        F: FnMut(&PPU) + 'call + 'a,
+        F: FnMut(&PPU, &mut Joypad) + 'call + 'a,
     {
         Bus {
             cpu_vram: [0; CPU_VRAM_SIZE],
             ppu,
             rom: None,
+            joypad1: Joypad::new(),
 
             cycles: 0,
             gameloop_callback: Box::from(gameloop_callback),
@@ -91,7 +97,7 @@ impl<'a> Bus<'a> {
         let new_frame = self.ppu.tick(cycles * 3);
 
         if new_frame {
-            (self.gameloop_callback)(&self.ppu);
+            (self.gameloop_callback)(&self.ppu, &mut self.joypad1);
         }
     }
 
@@ -115,10 +121,8 @@ impl Mem for Bus<'_> {
                 // Ignore APU
                 0xFF
             }
-            0x4016..=0x4017 => {
-                // No Joypads is pressed
-                0x00
-            }
+            JOYPAD_1_ADDR => self.joypad1.read(),
+            JOYPAD_2_ADDR => 0x00,
             PRG_START..=PRG_END => self.read_prg_rom(addr),
             _ => {
                 println!("WARN: Ignoring read 0x{:X}", addr);
@@ -146,8 +150,12 @@ impl Mem for Bus<'_> {
             PPU_REGISTERS_MIRRORS_START..=PPU_REGISTERS_MIRRORS_END => {
                 self.mem_write(addr & PPU_REGISTERS_END, value)
             }
-            0x4000..=0x4013 | 0x4015..=0x4017 => {
+            0x4000..=0x4013 | 0x4015 => {
                 // Ignore APU
+            }
+            JOYPAD_1_ADDR => self.joypad1.write(value),
+            JOYPAD_2_ADDR => {
+                // We only use 1 joy pad
             }
             PRG_START..=PRG_END => {
                 panic!("Attempt to write to Cartridge ROM space")
