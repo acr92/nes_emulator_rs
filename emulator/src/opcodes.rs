@@ -21,6 +21,7 @@ pub fn is_addressing_absolute(mode: AddressingMode) -> bool {
     matches!(mode, AddressingMode::Absolute)
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug)]
 pub enum Instruction {
     // Official opcodes

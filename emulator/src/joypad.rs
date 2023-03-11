@@ -112,3 +112,9 @@ mod test {
         joypad.write(1);
     }
 }
+
+impl Default for Joypad {
+    fn default() -> Self {
+        Joypad::new()
+    }
+}

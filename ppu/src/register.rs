@@ -46,13 +46,13 @@ enum RegisterAccess {
 }
 
 pub(crate) fn is_read_allowed(register: &Register) -> bool {
-    return matches!(register.access, RegisterAccess::ReadWrite)
-        || matches!(register.access, RegisterAccess::ReadOnly);
+    matches!(register.access, RegisterAccess::ReadWrite)
+        || matches!(register.access, RegisterAccess::ReadOnly)
 }
 
 pub(crate) fn is_write_allowed(register: &Register) -> bool {
-    return matches!(register.access, RegisterAccess::ReadWrite)
-        || matches!(register.access, RegisterAccess::WriteOnly);
+    matches!(register.access, RegisterAccess::ReadWrite)
+        || matches!(register.access, RegisterAccess::WriteOnly)
 }
 
 #[derive(Debug)]
@@ -91,5 +91,11 @@ impl Registers {
             scroll: ScrollRegister::new(),
             address: AddressRegister::new(),
         }
+    }
+}
+
+impl Default for Registers {
+    fn default() -> Self {
+        Registers::new()
     }
 }

@@ -49,3 +49,9 @@ impl AddressRegister {
         (self.value.0 as u16) << 8 | (self.value.1 as u16)
     }
 }
+
+impl Default for AddressRegister {
+    fn default() -> Self {
+        AddressRegister::new()
+    }
+}

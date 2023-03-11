@@ -33,16 +33,16 @@ bitflags! {
     }
 }
 
-pub(crate) struct OAM {
+pub(crate) struct Oam {
     pub tile_y: usize,
     pub tile_x: usize,
     pub tile_index: u16,
     attributes: OAMAttribute,
 }
 
-impl OAM {
+impl Oam {
     fn new(bytes: &[u8]) -> Self {
-        OAM {
+        Oam {
             tile_y: bytes[0] as usize,
             tile_index: bytes[1] as u16,
             attributes: OAMAttribute::from_bits_truncate(bytes[2]),
@@ -50,12 +50,8 @@ impl OAM {
         }
     }
 
-    pub(crate) fn oam_iter(ppu: &PPU) -> impl Iterator<Item = OAM> + '_ {
-        ppu.oam_data
-            .as_slice()
-            .chunks_exact(4)
-            .rev()
-            .map(|chunk| OAM::new(chunk))
+    pub(crate) fn oam_iter(ppu: &PPU) -> impl Iterator<Item = Oam> + '_ {
+        ppu.oam_data.as_slice().chunks_exact(4).rev().map(Oam::new)
     }
 
     pub(crate) fn palette_index(&self) -> u8 {
@@ -63,14 +59,12 @@ impl OAM {
     }
 
     pub(crate) fn flip_horizontal(&self) -> bool {
-        return self
-            .attributes
-            .contains(OAMAttribute::FLIP_SPRITE_HORIZONTALLY);
+        self.attributes
+            .contains(OAMAttribute::FLIP_SPRITE_HORIZONTALLY)
     }
 
     pub(crate) fn flip_vertical(&self) -> bool {
-        return self
-            .attributes
-            .contains(OAMAttribute::FLIP_SPRITE_VERTICALLY);
+        self.attributes
+            .contains(OAMAttribute::FLIP_SPRITE_VERTICALLY)
     }
 }

@@ -1,5 +1,5 @@
 use crate::frame::Frame;
-use crate::oam::OAM;
+use crate::oam::Oam;
 use crate::palette::{background_palette, sprite_palette};
 use ppu::PPU;
 
@@ -52,7 +52,7 @@ pub fn render(ppu: &PPU, frame: &mut Frame) {
         }
     }
 
-    for oam in OAM::oam_iter(&ppu) {
+    for oam in Oam::oam_iter(ppu) {
         let sprite_palette = sprite_palette(ppu, oam.palette_index());
 
         let bank = ppu.registers.control.sprite_pattern_table_address();

@@ -78,10 +78,16 @@ impl ControlRegister {
     }
 
     pub fn generate_vblank_nmi(&self) -> bool {
-        return self.contains(ControlRegister::GENERATE_NMI_AT_VBI);
+        self.contains(ControlRegister::GENERATE_NMI_AT_VBI)
     }
 
     pub fn update(&mut self, data: u8) {
         self.bits = data;
+    }
+}
+
+impl Default for ControlRegister {
+    fn default() -> Self {
+        ControlRegister::new()
     }
 }

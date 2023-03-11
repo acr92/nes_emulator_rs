@@ -34,7 +34,7 @@ pub enum RegisterField {
     X,
     Y,
     SP,
-    STATUS,
+    Status,
 }
 
 #[derive(Debug)]
@@ -65,7 +65,7 @@ impl Register {
             RegisterField::X => self.x,
             RegisterField::Y => self.y,
             RegisterField::SP => self.sp,
-            RegisterField::STATUS => self.status.bits,
+            RegisterField::Status => self.status.bits,
         }
     }
 
@@ -75,11 +75,11 @@ impl Register {
             RegisterField::X => self.x = value,
             RegisterField::Y => self.y = value,
             RegisterField::SP => self.sp = value,
-            RegisterField::STATUS => self.status.bits = value,
+            RegisterField::Status => self.status.bits = value,
         }
 
         match field {
-            RegisterField::SP | RegisterField::STATUS => {}
+            RegisterField::SP | RegisterField::Status => {}
             _ => self.update_zero_and_negative_flags(value),
         }
     }
@@ -98,5 +98,11 @@ impl Register {
         } else {
             self.status.remove(CpuFlags::NEGATIVE);
         }
+    }
+}
+
+impl Default for Register {
+    fn default() -> Self {
+        Register::new()
     }
 }

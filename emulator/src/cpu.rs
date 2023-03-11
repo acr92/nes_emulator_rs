@@ -55,8 +55,6 @@ impl<'a> CPU<'a> {
     where
         F: FnMut(&mut CPU),
     {
-        let ref opcodes = *opcodes::OPCODES_MAP;
-
         loop {
             if let Some(_nmi) = self.bus.poll_nmi_status() {
                 self.interrupt_nmi();
@@ -68,9 +66,9 @@ impl<'a> CPU<'a> {
             self.register.pc = self.register.pc.wrapping_add(1);
             let program_counter_state = self.register.pc;
 
-            let opcode = opcodes
+            let opcode = opcodes::OPCODES_MAP
                 .get(&code)
-                .expect(&format!("Opcode {:x} is not recognized", code));
+                .unwrap_or_else(|| panic!("Opcode {:x} is not recognized", code));
 
             match opcode.instruction {
                 Instruction::BRK => {
@@ -207,7 +205,7 @@ impl<'a> CPU<'a> {
 
         self.register.write(target, value);
 
-        if self.page_crossed(&mode) {
+        if self.page_crossed(mode) {
             self.bus.tick(1)
         }
     }
@@ -282,13 +280,13 @@ impl<'a> CPU<'a> {
     }
 
     fn stack_push(&mut self, value: u8) {
-        self.mem_write((STACK as u16) + self.register.sp as u16, value);
+        self.mem_write(STACK + self.register.sp as u16, value);
         self.register.sp = self.register.sp.wrapping_sub(1);
     }
 
     fn stack_pop(&mut self) -> u8 {
         self.register.sp = self.register.sp.wrapping_add(1);
-        self.mem_read((STACK as u16) + self.register.sp as u16)
+        self.mem_read(STACK + self.register.sp as u16)
     }
 
     fn stack_push_u16(&mut self, value: u16) {
@@ -306,8 +304,8 @@ impl<'a> CPU<'a> {
     }
 
     fn dcp(&mut self, mode: &AddressingMode) {
-        self.decrement_memory(&mode);
-        self.compare(RegisterField::A, &mode);
+        self.decrement_memory(mode);
+        self.compare(RegisterField::A, mode);
     }
 
     fn lax(&mut self, mode: &AddressingMode) {
@@ -327,13 +325,13 @@ impl<'a> CPU<'a> {
 
     fn plp(&mut self) {
         let new_status = self.stack_pop();
-        self.register.write(RegisterField::STATUS, new_status);
+        self.register.write(RegisterField::Status, new_status);
         self.register.status.remove(CpuFlags::BREAK);
         self.register.status.insert(CpuFlags::BREAK2);
     }
 
     fn php(&mut self) {
-        let mut flags = self.register.status.clone();
+        let mut flags = self.register.status;
         flags.insert(CpuFlags::BREAK);
         flags.insert(CpuFlags::BREAK2);
         self.stack_push(flags.bits());
@@ -446,13 +444,13 @@ impl<'a> CPU<'a> {
     }
 
     fn sre(&mut self, mode: &AddressingMode) {
-        self.arithmetic_shift(&mode, lsr);
-        self.logic(&mode, |a, b| a ^ b);
+        self.arithmetic_shift(mode, lsr);
+        self.logic(mode, |a, b| a ^ b);
     }
 
     fn rra(&mut self, mode: &AddressingMode) {
-        self.arithmetic_shift(&mode, ror);
-        self.adc(&mode);
+        self.arithmetic_shift(mode, ror);
+        self.adc(mode);
     }
 
     fn branch(&mut self, condition: bool) {
@@ -528,7 +526,7 @@ impl<'a> CPU<'a> {
                 let base = self.mem_read(addr);
 
                 let lo = self.mem_read(base as u16);
-                let hi = self.mem_read((base as u8).wrapping_add(1) as u16);
+                let hi = self.mem_read(base.wrapping_add(1) as u16);
                 let deref_base = (hi as u16) << 8 | (lo as u16);
                 let deref = deref_base.wrapping_add(self.register.read(RegisterField::Y) as u16);
                 page_cross(deref, deref_base)
@@ -545,30 +543,26 @@ impl<'a> CPU<'a> {
 
             AddressingMode::ZeroPage_X => {
                 let pos = self.mem_read(addr);
-                let addr = pos.wrapping_add(self.register.read(RegisterField::X)) as u16;
-                addr
+                pos.wrapping_add(self.register.read(RegisterField::X)) as u16
             }
             AddressingMode::ZeroPage_Y => {
                 let pos = self.mem_read(addr);
-                let addr = pos.wrapping_add(self.register.read(RegisterField::Y)) as u16;
-                addr
+                pos.wrapping_add(self.register.read(RegisterField::Y)) as u16
             }
 
             AddressingMode::Absolute_X => {
                 let base = self.mem_read_u16(addr);
-                let addr = base.wrapping_add(self.register.read(RegisterField::X) as u16);
-                addr
+                base.wrapping_add(self.register.read(RegisterField::X) as u16)
             }
             AddressingMode::Absolute_Y => {
                 let base = self.mem_read_u16(addr);
-                let addr = base.wrapping_add(self.register.read(RegisterField::Y) as u16);
-                addr
+                base.wrapping_add(self.register.read(RegisterField::Y) as u16)
             }
 
             AddressingMode::Indirect_X => {
                 let base = self.mem_read(addr);
 
-                let ptr: u8 = (base as u8).wrapping_add(self.register.read(RegisterField::X));
+                let ptr: u8 = base.wrapping_add(self.register.read(RegisterField::X));
                 let lo = self.mem_read(ptr as u16);
                 let hi = self.mem_read(ptr.wrapping_add(1) as u16);
                 (hi as u16) << 8 | (lo as u16)
@@ -577,10 +571,9 @@ impl<'a> CPU<'a> {
                 let base = self.mem_read(addr);
 
                 let lo = self.mem_read(base as u16);
-                let hi = self.mem_read((base as u8).wrapping_add(1) as u16);
+                let hi = self.mem_read(base.wrapping_add(1) as u16);
                 let deref_base = (hi as u16) << 8 | (lo as u16);
-                let deref = deref_base.wrapping_add(self.register.read(RegisterField::Y) as u16);
-                deref
+                deref_base.wrapping_add(self.register.read(RegisterField::Y) as u16)
             }
 
             _ => {
@@ -598,7 +591,7 @@ impl<'a> CPU<'a> {
 
     fn interrupt_nmi(&mut self) {
         self.stack_push_u16(self.register.pc);
-        let mut flag = self.register.status.clone();
+        let mut flag = self.register.status;
         flag.set(CpuFlags::BREAK, false);
         flag.set(CpuFlags::BREAK2, true);
 

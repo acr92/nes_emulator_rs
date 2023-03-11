@@ -12,7 +12,7 @@ pub struct Rom {
 }
 
 impl Rom {
-    pub fn new(raw: &Vec<u8>) -> Result<Rom, String> {
+    pub fn new(raw: &[u8]) -> Result<Rom, String> {
         if raw[0..4] != NES_TAG {
             return Err("File is not in iNES file format".to_string());
         }

@@ -60,7 +60,7 @@ pub struct Bus<'call> {
 }
 
 impl<'a> Bus<'a> {
-    pub fn new<'call>(ppu: PPU) -> Self {
+    pub fn new(ppu: PPU) -> Self {
         Bus::new_with_callback(ppu, |_ppu, _joypad| {})
     }
 
@@ -141,8 +141,9 @@ impl Mem for Bus<'_> {
             PPU_REGISTER_OAM_DMA => {
                 let mut buffer: [u8; OAM_DATA_SIZE] = [0; OAM_DATA_SIZE];
                 let hi: u16 = (value as u16) << 8;
-                for i in 0..OAM_DATA_SIZE {
-                    buffer[i as usize] = self.mem_read(hi + (i as u16));
+
+                for (i, item) in buffer.iter_mut().enumerate() {
+                    *item = self.mem_read(hi + (i as u16));
                 }
 
                 self.ppu.write_oam_dma(&buffer);

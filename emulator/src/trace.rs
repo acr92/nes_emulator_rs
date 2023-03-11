@@ -5,12 +5,10 @@ use crate::register::RegisterField;
 use core::mem::Mem;
 
 pub fn trace_light(cpu: &mut CPU) -> String {
-    let ref opscodes = *opcodes::OPCODES_MAP;
-
     let code = cpu.mem_read(cpu.register.pc);
-    let ops = opscodes
+    let ops = opcodes::OPCODES_MAP
         .get(&code)
-        .expect(format!("Unknown OP 0x{:02X}", code).as_str());
+        .unwrap_or_else(|| panic!("Unknown OP 0x{:02X}", code));
 
     format!(
         "{:04X} {:#?} F={:#?}",
@@ -19,12 +17,10 @@ pub fn trace_light(cpu: &mut CPU) -> String {
 }
 
 pub fn trace(cpu: &mut CPU) -> String {
-    let ref opscodes = *opcodes::OPCODES_MAP;
-
     let code = cpu.mem_read(cpu.register.pc);
-    let ops = opscodes
+    let ops = opcodes::OPCODES_MAP
         .get(&code)
-        .expect(format!("Unknown OP 0x{:02X}", code).as_str());
+        .unwrap_or_else(|| panic!("Unknown OP 0x{:02X}", code));
 
     let begin = cpu.register.pc;
     let mut hex_dump = vec![];
@@ -42,7 +38,7 @@ pub fn trace(cpu: &mut CPU) -> String {
 
     let tmp = match ops.len {
         1 => match ops.mode {
-            AddressingMode::Accumulator => format!("A "),
+            AddressingMode::Accumulator => "A ".to_string(),
             _ => String::from(""),
         },
         2 => {
@@ -167,10 +163,7 @@ pub fn trace(cpu: &mut CPU) -> String {
 }
 
 fn is_jmp_instruction(ops: &&OpCode) -> bool {
-    match ops.instruction {
-        Instruction::JMP | Instruction::JSR => true,
-        _ => false,
-    }
+    matches!(ops.instruction, Instruction::JMP | Instruction::JSR)
 }
 
 #[cfg(test)]

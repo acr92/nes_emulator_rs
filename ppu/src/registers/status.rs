@@ -64,3 +64,9 @@ impl StatusRegister {
         self.bits
     }
 }
+
+impl Default for StatusRegister {
+    fn default() -> Self {
+        StatusRegister::new()
+    }
+}

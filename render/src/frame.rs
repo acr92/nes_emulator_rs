@@ -15,6 +15,7 @@ impl Frame {
         }
     }
 
+    #[inline]
     pub fn set_pixel(&mut self, x: usize, y: usize, rgb: (u8, u8, u8)) {
         let base = y * Frame::RGB_SIZE * Frame::WIDTH + x * Frame::RGB_SIZE;
         if base + 2 < self.data.len() {
@@ -24,9 +25,9 @@ impl Frame {
         }
     }
 
-    pub fn show_tiles(chr_rom: &Vec<u8>, bank: usize) -> Frame {
+    pub fn show_tiles(chr_rom: &[u8], bank: usize) -> Frame {
         assert!(bank <= 1);
-        let bank = (bank * ppu::CHR_ROM_BANK_SIZE) as usize;
+        let bank = bank * ppu::CHR_ROM_BANK_SIZE;
 
         let mut frame = Frame::new();
         for tile_n in 0..Frame::WIDTH {
@@ -54,5 +55,11 @@ impl Frame {
         }
 
         frame
+    }
+}
+
+impl Default for Frame {
+    fn default() -> Self {
+        Frame::new()
     }
 }

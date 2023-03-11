@@ -61,7 +61,7 @@ impl PPU {
     pub fn tick(&mut self, cycles: u8) -> bool {
         self.cycles += cycles as usize;
         if self.cycles >= 341 {
-            self.cycles = self.cycles - 341;
+            self.cycles -= 341;
             self.scanline += 1;
 
             if self.scanline == 241 {
@@ -81,7 +81,7 @@ impl PPU {
             }
         }
 
-        return false;
+        false
     }
 
     fn increment_vram_addr(&mut self) {
@@ -198,7 +198,7 @@ impl Mem for PPU {
     fn mem_read(&mut self, addr: u16) -> u8 {
         let register = PPU_REGISTERS_MAP
             .get(&addr)
-            .expect(&format!("Unexpected addr {:04X}", addr));
+            .unwrap_or_else(|| panic!("Unexpected addr {:04X}", addr));
 
         if !is_read_allowed(register) {
             println!("Tried to read from write-only {:#?}", register);
@@ -216,7 +216,7 @@ impl Mem for PPU {
     fn mem_write(&mut self, addr: u16, value: u8) {
         let register = PPU_REGISTERS_MAP
             .get(&addr)
-            .expect(&format!("Unexpected addr {:04X}", addr));
+            .unwrap_or_else(|| panic!("Unexpected addr {:04X}", addr));
 
         if !is_write_allowed(register) {
             panic!("Tried to write to readonly {:#?}", register);
