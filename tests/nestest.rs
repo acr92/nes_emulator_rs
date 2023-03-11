@@ -5,11 +5,7 @@ use emulator::trace::trace;
 use k9::assert_equal;
 use ppu::PPU;
 
-macro_rules! test_file {
-    ($fname:expr) => {
-        concat!(env!("CARGO_MANIFEST_DIR"), "/testcarts/", $fname)
-    };
-}
+mod common;
 
 #[test]
 fn test_nestest() {
