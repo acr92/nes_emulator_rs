@@ -10,6 +10,8 @@ use sdl2::pixels::PixelFormatEnum;
 use std::collections::HashMap;
 use std::env;
 
+const WINDOW_SCALE: f32 = 3.0;
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
@@ -26,37 +28,35 @@ fn main() {
     let window = video_subsystem
         .window(
             "NES Emulator in Rust by acr92",
-            (256 * 3) as u32,
-            (240 * 3) as u32,
+            (Frame::WIDTH as f32 * WINDOW_SCALE) as u32,
+            (Frame::HEIGHT as f32 * WINDOW_SCALE) as u32,
         )
         .position_centered()
         .build()
         .unwrap();
 
-    let mut key_map: HashMap<Keycode, JoypadButton> = HashMap::new();
-    key_map.insert(Keycode::Down, JoypadButton::DOWN);
-    key_map.insert(Keycode::Up, JoypadButton::UP);
-    key_map.insert(Keycode::Right, JoypadButton::RIGHT);
-    key_map.insert(Keycode::Left, JoypadButton::LEFT);
-    key_map.insert(Keycode::Space, JoypadButton::SELECT);
-    key_map.insert(Keycode::Return, JoypadButton::START);
-    key_map.insert(Keycode::A, JoypadButton::BUTTON_A);
-    key_map.insert(Keycode::S, JoypadButton::BUTTON_B);
+    let key_map = create_keymap();
 
     let mut canvas = window.into_canvas().present_vsync().build().unwrap();
     let mut event_pump = sdl_context.event_pump().unwrap();
-    canvas.set_scale(3.0, 3.0).unwrap();
+    canvas.set_scale(WINDOW_SCALE, WINDOW_SCALE).unwrap();
 
     let creator = canvas.texture_creator();
     let mut texture = creator
-        .create_texture_target(PixelFormatEnum::RGB24, 256, 240)
+        .create_texture_target(
+            PixelFormatEnum::RGB24,
+            Frame::WIDTH as u32,
+            Frame::HEIGHT as u32,
+        )
         .unwrap();
 
     let ppu = PPU::new(rom.chr_rom.clone(), rom.screen_mirroring);
     let mut frame = Frame::new();
     let mut bus = Bus::new_with_callback(ppu, move |ppu, joypad| {
         render::render(ppu, &mut frame);
-        texture.update(None, &frame.data, 256 * 3).unwrap();
+        texture
+            .update(None, &frame.data, Frame::WIDTH * Frame::RGB_SIZE)
+            .unwrap();
 
         canvas.copy(&texture, None, None).unwrap();
 
@@ -88,4 +88,17 @@ fn main() {
     let mut cpu = CPU::new(bus);
     cpu.reset();
     cpu.run();
+}
+
+fn create_keymap() -> HashMap<Keycode, JoypadButton> {
+    let mut key_map: HashMap<Keycode, JoypadButton> = HashMap::new();
+    key_map.insert(Keycode::Down, JoypadButton::DOWN);
+    key_map.insert(Keycode::Up, JoypadButton::UP);
+    key_map.insert(Keycode::Right, JoypadButton::RIGHT);
+    key_map.insert(Keycode::Left, JoypadButton::LEFT);
+    key_map.insert(Keycode::Space, JoypadButton::SELECT);
+    key_map.insert(Keycode::Return, JoypadButton::START);
+    key_map.insert(Keycode::A, JoypadButton::BUTTON_A);
+    key_map.insert(Keycode::S, JoypadButton::BUTTON_B);
+    key_map
 }

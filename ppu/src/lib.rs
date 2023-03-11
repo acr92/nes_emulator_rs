@@ -186,7 +186,7 @@ impl PPU {
         self.oam_data[self.registers.oam_address as usize]
     }
 
-    pub fn write_oam_dma(&mut self, data: &[u8; 256]) {
+    pub fn write_oam_dma(&mut self, data: &[u8; OAM_DATA_SIZE]) {
         for x in data.iter() {
             self.oam_data[self.registers.oam_address as usize] = *x;
             self.registers.oam_address = self.registers.oam_address.wrapping_add(1);
@@ -418,7 +418,7 @@ pub mod test {
     fn test_oam_dma() {
         let mut ppu = PPU::new_empty_rom();
 
-        let mut data = [0x66; 256];
+        let mut data = [0x66; OAM_DATA_SIZE];
         data[0] = 0x77;
         data[255] = 0x88;
 

@@ -158,7 +158,7 @@ impl Mem for Bus<'_> {
                 // We only use 1 joy pad
             }
             PRG_START..=PRG_END => {
-                panic!("Attempt to write to Cartridge ROM space")
+                // Ignore writes to PRG for now, it'll be used when we implement mappers.
             }
             _ => {
                 println!("WARN: Ignoring write 0x{:X} = 0x{:X}", addr, value);
@@ -250,10 +250,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Attempt to write to Cartridge ROM space")]
-    fn test_cannot_write_to_cartridge() {
+    fn test_writes_to_cartridge_space_is_ignored() {
         let mut bus = Bus::new(PPU::new_empty_rom());
         bus.mem_write_u16(0xFFFC, 0x1234);
-        assert_eq!(bus.mem_read_u16(0xFFFC), 0x1234);
+        assert_ne!(bus.mem_read_u16(0xFFFC), 0x1234);
     }
 }

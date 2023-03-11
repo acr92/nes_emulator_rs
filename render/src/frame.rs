@@ -5,9 +5,9 @@ pub struct Frame {
 }
 
 impl Frame {
-    const WIDTH: usize = 256;
-    const HEIGHT: usize = 240;
-    const RGB_SIZE: usize = 3;
+    pub const WIDTH: usize = 256;
+    pub const HEIGHT: usize = 240;
+    pub const RGB_SIZE: usize = 3;
 
     pub fn new() -> Self {
         Frame {
@@ -29,7 +29,7 @@ impl Frame {
         let bank = (bank * ppu::CHR_ROM_BANK_SIZE) as usize;
 
         let mut frame = Frame::new();
-        for tile_n in 0..256 {
+        for tile_n in 0..Frame::WIDTH {
             let tile = &chr_rom[(bank + tile_n * 16)..=(bank + tile_n * 16 + 15)];
 
             for y in 0..=7 {
