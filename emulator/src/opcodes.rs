@@ -150,6 +150,8 @@ impl OpCode {
 lazy_static! {
     pub static ref CPU_OPCODES: Vec<OpCode> = vec![
         // Official opcodes
+        OpCode::new(0x00, Instruction::BRK, 1, 7, AddressingMode::NoneAddressing),
+
         OpCode::new(0x69, Instruction::ADC, 2, 2, AddressingMode::Immediate),
         OpCode::new(0x65, Instruction::ADC, 2, 3, AddressingMode::ZeroPage),
         OpCode::new(0x75, Instruction::ADC, 2, 4, AddressingMode::ZeroPage_X),
@@ -185,8 +187,6 @@ lazy_static! {
 
         OpCode::new(0x24, Instruction::BIT, 2, 3, AddressingMode::ZeroPage),
         OpCode::new(0x2C, Instruction::BIT, 3, 4, AddressingMode::Absolute),
-
-        OpCode::new(0x00, Instruction::BRK, 1, 7, AddressingMode::NoneAddressing),
 
         OpCode::new(0x18, Instruction::CLC, 1, 2, AddressingMode::NoneAddressing),
         OpCode::new(0xD8, Instruction::CLD, 1, 2, AddressingMode::NoneAddressing),
@@ -464,5 +464,13 @@ lazy_static! {
             map.insert(cpuop.code, cpuop);
         }
         map
+    };
+
+    pub static ref OPCODES_LIST: [&'static OpCode; 256] = {
+        let mut opcodes: [&OpCode; 256] = [&(*CPU_OPCODES)[0]; 256];
+        for cpuop in &*CPU_OPCODES {
+            opcodes[cpuop.code as usize] = cpuop;
+        }
+        opcodes
     };
 }

@@ -66,9 +66,7 @@ impl<'a> CPU<'a> {
             self.register.pc = self.register.pc.wrapping_add(1);
             let program_counter_state = self.register.pc;
 
-            let opcode = opcodes::OPCODES_MAP
-                .get(&code)
-                .unwrap_or_else(|| panic!("Opcode {:x} is not recognized", code));
+            let opcode = (*opcodes::OPCODES_LIST)[code as usize];
 
             match opcode.instruction {
                 Instruction::BRK => {
