@@ -49,6 +49,8 @@ const JOYPAD_2_ADDR: u16 = 0x4017;
 const PRG_START: u16 = 0x8000;
 const PRG_END: u16 = 0xFFFF;
 
+pub type GameloopCallback<'call> = Box<dyn FnMut(&PPU, &mut Joypad) + 'call>;
+
 pub struct Bus<'call> {
     cpu_vram: [u8; CPU_VRAM_SIZE],
     pub ppu: PPU,
@@ -56,17 +58,15 @@ pub struct Bus<'call> {
     pub joypad1: Joypad,
 
     pub cycles: usize,
-    gameloop_callback: Box<dyn FnMut(&PPU, &mut Joypad) + 'call>,
+    gameloop_callback: GameloopCallback<'call>,
 }
 
 impl<'a> Bus<'a> {
     pub fn new(ppu: PPU) -> Self {
-        Bus::new_with_callback(ppu, |_ppu, _joypad| {})
+        Bus::new_with_callback(ppu, Box::new(|_ppu, _joypad| {}))
     }
 
-    pub fn new_with_callback<'call, F>(ppu: PPU, gameloop_callback: F) -> Self
-    where
-        F: FnMut(&PPU, &mut Joypad) + 'call + 'a,
+    pub fn new_with_callback(ppu: PPU, gameloop_callback: GameloopCallback) -> Bus
     {
         Bus {
             cpu_vram: [0; CPU_VRAM_SIZE],
@@ -75,7 +75,7 @@ impl<'a> Bus<'a> {
             joypad1: Joypad::new(),
 
             cycles: 0,
-            gameloop_callback: Box::from(gameloop_callback),
+            gameloop_callback,
         }
     }
 

@@ -52,7 +52,7 @@ fn main() {
 
     let ppu = PPU::new(rom.chr_rom.clone(), rom.screen_mirroring);
     let mut frame = Frame::new();
-    let mut bus = Bus::new_with_callback(ppu, move |ppu, joypad| {
+    let mut bus = Bus::new_with_callback(ppu, Box::new(move |ppu, joypad| {
         render::render(ppu, &mut frame);
         texture
             .update(None, &frame.data, Frame::WIDTH * Frame::RGB_SIZE)
@@ -82,7 +82,7 @@ fn main() {
                 _ => {}
             }
         }
-    });
+    }));
     bus.rom = Some(Box::from(rom));
 
     let mut cpu = CPU::new(bus);
