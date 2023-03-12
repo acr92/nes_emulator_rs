@@ -7,9 +7,11 @@ use emulator::cartridge::Rom;
 use emulator::joypad::Joypad;
 use ppu::PPU;
 use render::frame::Frame;
+use render::rectangle::Rectangle;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::PixelFormatEnum;
+use sdl2::rect::Rect;
 use sdl2::surface::Surface;
 use sdl2::EventPump;
 use std::collections::HashMap;
@@ -31,7 +33,7 @@ fn main() {
     let program = std::fs::read(filename).unwrap();
     let rom = Rom::new(&program).unwrap();
 
-    let (tx_frame, rx_frame): (Sender<Frame>, Receiver<Frame>) = mpsc::channel();
+    let (tx_frame, rx_frame): (Sender<Vec<Frame>>, Receiver<Vec<Frame>>) = mpsc::channel();
     let (tx_joycon, rx_joycon): (Sender<Vec<InputEvent>>, Receiver<Vec<InputEvent>>) =
         mpsc::channel();
 
@@ -41,12 +43,23 @@ fn main() {
     let mut bus = NESBus::new_with_callback(
         ppu,
         Box::new(move |ppu, joypad| {
-            let mut frame = Frame::new();
-            render::render(ppu, &mut frame);
-            tx_frame.send(frame).expect("Should send frame");
+            let mut game_frame = Frame::new();
+            render::render(ppu, &mut game_frame);
+
+            let mut nt1_frame = Frame::new();
+            let viewport = Rectangle::new(0, 0, Frame::WIDTH, Frame::HEIGHT);
+            render::render_name_table(ppu, &mut nt1_frame, &ppu.vram[0..0x400], viewport, 0, 0);
+
+            let mut nt2_frame = Frame::new();
+            let viewport = Rectangle::new(0, 0, Frame::WIDTH, Frame::HEIGHT);
+            render::render_name_table(ppu, &mut nt2_frame, &ppu.vram[0x400..0x800], viewport, 0, 0);
+
+            tx_frame
+                .send(vec![game_frame, nt1_frame, nt2_frame])
+                .expect("Should send frames");
 
             for key_event in rx_joycon.recv().expect("Should receive joycon state") {
-                update_joypad_state(joypad, key_event)
+                update_joypad_state(joypad, key_event);
             }
         }),
     );
@@ -61,7 +74,7 @@ fn main() {
         .expect("Should be able to attach to the render thread");
 }
 
-fn create_render_thread(rx_frame: Receiver<Frame>, tx_joycon: Sender<Vec<InputEvent>>) -> ! {
+fn create_render_thread(rx_frame: Receiver<Vec<Frame>>, tx_joycon: Sender<Vec<InputEvent>>) -> ! {
     println!("Started render thread");
 
     let sdl_context = sdl2::init().unwrap();
@@ -69,8 +82,8 @@ fn create_render_thread(rx_frame: Receiver<Frame>, tx_joycon: Sender<Vec<InputEv
     let window = video_subsystem
         .window(
             "NES Emulator in Rust by acr92",
-            (Frame::WIDTH as f32 * WINDOW_SCALE) as u32,
-            (Frame::HEIGHT as f32 * WINDOW_SCALE) as u32,
+            (Frame::WIDTH as f32 * 2.0 * WINDOW_SCALE) as u32,
+            (Frame::HEIGHT as f32 * 2.0 * WINDOW_SCALE) as u32,
         )
         .position_centered()
         .build()
@@ -83,7 +96,23 @@ fn create_render_thread(rx_frame: Receiver<Frame>, tx_joycon: Sender<Vec<InputEv
     canvas.set_scale(WINDOW_SCALE, WINDOW_SCALE).unwrap();
 
     let creator = canvas.texture_creator();
-    let mut texture = creator
+    let mut game_texture = creator
+        .create_texture_target(
+            PixelFormatEnum::RGB24,
+            Frame::WIDTH as u32,
+            Frame::HEIGHT as u32,
+        )
+        .unwrap();
+
+    let mut nt1_texture = creator
+        .create_texture_target(
+            PixelFormatEnum::RGB24,
+            Frame::WIDTH as u32,
+            Frame::HEIGHT as u32,
+        )
+        .unwrap();
+
+    let mut nt2_texture = creator
         .create_texture_target(
             PixelFormatEnum::RGB24,
             Frame::WIDTH as u32,
@@ -92,13 +121,54 @@ fn create_render_thread(rx_frame: Receiver<Frame>, tx_joycon: Sender<Vec<InputEv
         .unwrap();
 
     loop {
-        let mut frame = rx_frame.recv().unwrap();
+        let mut frames = rx_frame.recv().unwrap();
 
-        texture
-            .update(None, &frame.data, Frame::WIDTH * Frame::RGB_SIZE)
+        let game_frame = &frames[0];
+        // TODO: clean this up
+        let nt1_frame = &frames[1];
+        let nt2_frame = &frames[2];
+
+        game_texture
+            .update(None, &game_frame.data, Frame::WIDTH * Frame::RGB_SIZE)
+            .unwrap();
+        nt1_texture
+            .update(None, &nt1_frame.data, Frame::WIDTH * Frame::RGB_SIZE)
+            .unwrap();
+        nt2_texture
+            .update(None, &nt2_frame.data, Frame::WIDTH * Frame::RGB_SIZE)
             .unwrap();
 
-        canvas.copy(&texture, None, None).unwrap();
+        canvas
+            .copy(
+                &game_texture,
+                None,
+                Some(Rect::new(0, 0, Frame::WIDTH as u32, Frame::HEIGHT as u32)),
+            )
+            .unwrap();
+        canvas
+            .copy(
+                &nt1_texture,
+                None,
+                Some(Rect::new(
+                    0,
+                    Frame::HEIGHT as i32,
+                    Frame::WIDTH as u32,
+                    Frame::HEIGHT as u32,
+                )),
+            )
+            .unwrap();
+        canvas
+            .copy(
+                &nt2_texture,
+                None,
+                Some(Rect::new(
+                    Frame::WIDTH as i32,
+                    Frame::HEIGHT as i32,
+                    Frame::WIDTH as u32,
+                    Frame::HEIGHT as u32,
+                )),
+            )
+            .unwrap();
 
         canvas.present();
         let key_events = process_input(&key_map, &mut event_pump);
@@ -111,7 +181,7 @@ fn create_render_thread(rx_frame: Receiver<Frame>, tx_joycon: Sender<Vec<InputEv
                 }
 
                 if matches!(key, InputAction::CaptureScreenshot) {
-                    save_screenshot(&mut frame).unwrap();
+                    save_screenshot(&mut frames[0]).unwrap();
                 }
             }
         }
