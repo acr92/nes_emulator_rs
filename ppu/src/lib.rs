@@ -61,6 +61,10 @@ impl PPU {
     pub fn tick(&mut self, cycles: u8) -> bool {
         self.cycles += cycles as usize;
         if self.cycles >= 341 {
+            if self.is_sprite_zero_hit(self.cycles) {
+                self.registers.status.set_sprite_zero_hit(true);
+            }
+
             self.cycles -= 341;
             self.scanline += 1;
 
@@ -82,6 +86,12 @@ impl PPU {
         }
 
         false
+    }
+
+    fn is_sprite_zero_hit(&self, cycle: usize) -> bool {
+        let y = self.oam_data[0] as usize;
+        let x = self.oam_data[3] as usize;
+        (y == self.scanline as usize) && x <= cycle && self.registers.mask.show_sprites()
     }
 
     fn increment_vram_addr(&mut self) {
@@ -239,6 +249,7 @@ impl Mem for PPU {
 pub mod test {
     use super::*;
     use crate::registers::control::ControlRegister;
+    use crate::registers::mask::MaskRegister;
     use crate::registers::status::StatusRegister;
     use k9::assert_equal;
 
@@ -530,6 +541,70 @@ pub mod test {
             .registers
             .status
             .contains(StatusRegister::VBLANK_STARTED));
+        assert!(!ppu
+            .registers
+            .status
+            .contains(StatusRegister::SPRITE_ZERO_HIT));
+    }
+
+    #[test]
+    fn test_tick_checks_if_sprite_zero_is_hit_on_every_cycle() {
+        let mut ppu = PPU::new_empty_rom();
+        ppu.registers
+            .control
+            .set(ControlRegister::GENERATE_NMI_AT_VBI, true);
+        ppu.registers.mask.set(MaskRegister::SHOW_SPRITES, true);
+
+        ppu.oam_data[0] = 10; // sprite_zero_hit scanline = 10
+        ppu.oam_data[3] = 0; // sprite_zero_hit 0 <= cycle
+
+        tick_one_scanline(&mut ppu);
+        assert!(!ppu
+            .registers
+            .status
+            .contains(StatusRegister::SPRITE_ZERO_HIT));
+
+        ppu.oam_data[0] = 1; // sprite_zero_hit scanline = 1
+        ppu.oam_data[3] = 0; // sprite_zero_hit 0 <= cycle
+
+        tick_one_scanline(&mut ppu);
+        assert!(ppu
+            .registers
+            .status
+            .contains(StatusRegister::SPRITE_ZERO_HIT));
+    }
+
+    #[test]
+    fn test_tick_resets_sprite_zero_hit_during_vblank() {
+        let mut ppu = PPU::new_empty_rom();
+        ppu.registers
+            .control
+            .set(ControlRegister::GENERATE_NMI_AT_VBI, true);
+        ppu.registers.mask.set(MaskRegister::SHOW_SPRITES, true);
+
+        ppu.oam_data[0] = 10; // sprite_zero_hit scanline = 10
+        ppu.oam_data[3] = 0; // sprite_zero_hit 0 <= cycle
+
+        tick_one_scanline(&mut ppu);
+        assert!(!ppu
+            .registers
+            .status
+            .contains(StatusRegister::SPRITE_ZERO_HIT));
+
+        ppu.oam_data[0] = 1; // sprite_zero_hit scanline = 1
+        ppu.oam_data[3] = 0; // sprite_zero_hit 0 <= cycle
+
+        tick_one_scanline(&mut ppu);
+        assert!(ppu
+            .registers
+            .status
+            .contains(StatusRegister::SPRITE_ZERO_HIT));
+
+        for _ in 1..240 {
+            tick_one_scanline(&mut ppu);
+        }
+
+        assert_equal!(ppu.scanline, 241);
         assert!(!ppu
             .registers
             .status
