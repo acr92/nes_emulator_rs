@@ -81,6 +81,7 @@ impl PPU {
                 self.nmi_interrupt = None;
                 self.registers.status.set_sprite_zero_hit(false);
                 self.registers.status.reset_vblank_status();
+                // self.registers.control = ControlRegister::new();
             }
         }
 
