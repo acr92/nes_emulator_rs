@@ -28,6 +28,7 @@
 
 use crate::cartridge::Rom;
 use crate::joypad::Joypad;
+use core::bus::{Bus, BusPeripheral};
 use core::mem::Mem;
 use ppu::{OAM_DATA_SIZE, PPU};
 
@@ -51,7 +52,7 @@ const PRG_END: u16 = 0xFFFF;
 
 pub type GameloopCallback<'call> = Box<dyn FnMut(&PPU, &mut Joypad) + 'call>;
 
-pub struct Bus<'call> {
+pub struct NESBus<'call> {
     cpu_vram: [u8; CPU_VRAM_SIZE],
     pub ppu: PPU,
     pub rom: Option<Box<Rom>>,
@@ -61,13 +62,13 @@ pub struct Bus<'call> {
     gameloop_callback: GameloopCallback<'call>,
 }
 
-impl<'a> Bus<'a> {
+impl<'a> NESBus<'a> {
     pub fn new(ppu: PPU) -> Self {
-        Bus::new_with_callback(ppu, Box::new(|_ppu, _joypad| {}))
+        NESBus::new_with_callback(ppu, Box::new(|_ppu, _joypad| {}))
     }
 
-    pub fn new_with_callback(ppu: PPU, gameloop_callback: GameloopCallback) -> Bus {
-        Bus {
+    pub fn new_with_callback(ppu: PPU, gameloop_callback: GameloopCallback) -> NESBus {
+        NESBus {
             cpu_vram: [0; CPU_VRAM_SIZE],
             ppu,
             rom: None,
@@ -89,8 +90,10 @@ impl<'a> Bus<'a> {
             0xFF
         }
     }
+}
 
-    pub fn tick(&mut self, cycles: u8) {
+impl Bus<'static> for NESBus<'static> {
+    fn tick(&mut self, cycles: u8) {
         self.cycles += cycles as usize;
 
         let new_frame = self.ppu.tick(cycles * 3);
@@ -99,12 +102,21 @@ impl<'a> Bus<'a> {
         }
     }
 
-    pub fn poll_nmi_status(&mut self) -> Option<u8> {
+    fn poll_nmi_status(&mut self) -> Option<u8> {
         self.ppu.nmi_interrupt.take()
+    }
+
+    fn get_clock_cycles_for_peripheral(&self, peripheral: BusPeripheral) -> usize {
+        match peripheral {
+            BusPeripheral::Cpu => self.cycles,
+            BusPeripheral::Ppu => self.ppu.cycles,
+            BusPeripheral::PpuScanlines => self.ppu.scanline as usize,
+            BusPeripheral::Apu => panic!("APU is not supported yet"),
+        }
     }
 }
 
-impl Mem for Bus<'_> {
+impl Mem for NESBus<'_> {
     fn mem_read(&mut self, addr: u16) -> u8 {
         match addr {
             RAM_START..=RAM_MIRRORS_END => {
@@ -172,28 +184,28 @@ mod tests {
 
     #[test]
     fn test_ram_read() {
-        let mut bus = Bus::new(PPU::new_empty_rom());
+        let mut bus = NESBus::new(PPU::new_empty_rom());
         let value = bus.mem_read(0x0001);
         assert_eq!(value, 0);
     }
 
     #[test]
     fn test_ram_write() {
-        let mut bus = Bus::new(PPU::new_empty_rom());
+        let mut bus = NESBus::new(PPU::new_empty_rom());
         bus.mem_write(0x0001, 0xAA);
         assert_eq!(bus.cpu_vram[0x0001], 0xAA);
     }
 
     #[test]
     fn test_ram_read_and_write() {
-        let mut bus = Bus::new(PPU::new_empty_rom());
+        let mut bus = NESBus::new(PPU::new_empty_rom());
         bus.mem_write(0x800, 0xCA);
         assert_eq!(bus.mem_read(0x800), 0xCA);
     }
 
     #[test]
     fn test_ram_read_and_write_mirror() {
-        let mut bus = Bus::new(PPU::new_empty_rom());
+        let mut bus = NESBus::new(PPU::new_empty_rom());
         bus.mem_write(0x000, 0x01);
 
         let value = bus.mem_read(0x800) + 1;
@@ -211,13 +223,13 @@ mod tests {
     #[test]
     fn test_ppu_read() {
         let ppu = PPU::new_empty_rom();
-        let mut bus = Bus::new(ppu);
+        let mut bus = NESBus::new(ppu);
         assert_eq!(bus.mem_read(0x2004), 0x00);
     }
 
     #[test]
     fn test_ppu_write() {
-        let mut bus = Bus::new(PPU::new_empty_rom());
+        let mut bus = NESBus::new(PPU::new_empty_rom());
         bus.mem_write(0x2006, 0x21);
         bus.mem_write(0x2006, 0x00);
         bus.mem_write(0x2007, 0xBB);
@@ -230,7 +242,7 @@ mod tests {
 
     #[test]
     fn test_ppu_mask() {
-        let mut bus = Bus::new(PPU::new_empty_rom());
+        let mut bus = NESBus::new(PPU::new_empty_rom());
         bus.mem_write(0x200E, 0x21);
         bus.mem_write(0x200E, 0x00);
         bus.mem_write(0x200F, 0xBB);
@@ -243,14 +255,14 @@ mod tests {
 
     #[test]
     fn test_cartridge_read() {
-        let mut bus = Bus::new(PPU::new_empty_rom());
+        let mut bus = NESBus::new(PPU::new_empty_rom());
         bus.rom = Some(Box::from(crate::cartridge::test::create_example_rom()));
         assert_eq!(bus.mem_read(PRG_START + 0x800), 0x01);
     }
 
     #[test]
     fn test_writes_to_cartridge_space_is_ignored() {
-        let mut bus = Bus::new(PPU::new_empty_rom());
+        let mut bus = NESBus::new(PPU::new_empty_rom());
         bus.mem_write_u16(0xFFFC, 0x1234);
         assert_ne!(bus.mem_read_u16(0xFFFC), 0x1234);
     }

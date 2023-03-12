@@ -1,12 +1,12 @@
-use crate::bus::Bus;
 use crate::opcodes;
 use crate::opcodes::{is_addressing_absolute, AddressingMode, Instruction};
 use crate::register::{CpuFlags, Register, RegisterField, STACK};
+use core::bus::Bus;
 use core::mem::{Mem, VECTOR_NMI_INTERRUPT_HANDLER, VECTOR_RESET_HANDLER};
 
 pub struct CPU<'a> {
     pub register: Register,
-    pub bus: Bus<'a>,
+    pub bus: Box<dyn Bus<'a>>,
 }
 
 impl<'a> Mem for CPU<'a> {
@@ -24,7 +24,7 @@ fn page_cross(a: u16, b: u16) -> bool {
 }
 
 impl<'a> CPU<'a> {
-    pub fn new(bus: Bus) -> CPU {
+    pub fn new(bus: Box<dyn Bus<'a>>) -> CPU<'a> {
         CPU {
             register: Register::new(),
             bus,
@@ -627,18 +627,16 @@ fn ror(data: u8, carry: bool) -> (u8, bool) {
 
 #[cfg(test)]
 mod test {
-    use crate::bus::Bus;
     use crate::cpu::{CpuFlags, CPU};
+    use crate::mock_bus::MockBus;
     use crate::opcodes;
     use crate::opcodes::AddressingMode;
     use crate::register::{RegisterField, STACK_RESET};
     use core::mem::Mem;
-    use ppu::PPU;
 
     fn create() -> CPU<'static> {
-        let ppu = PPU::new_empty_rom();
-        let bus = Bus::new(ppu);
-        return CPU::new(bus);
+        let bus = MockBus::new();
+        return CPU::new(Box::new(bus));
     }
 
     #[test]

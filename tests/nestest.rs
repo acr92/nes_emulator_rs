@@ -1,6 +1,6 @@
-use emulator::bus::Bus;
+use cpu6502::cpu::CPU;
+use emulator::bus::NESBus;
 use emulator::cartridge::Rom;
-use emulator::cpu::CPU;
 use emulator::trace::trace;
 use k9::assert_equal;
 use ppu::PPU;
@@ -19,14 +19,14 @@ fn test_nestest() {
     let rom = Rom::new(&program).unwrap();
 
     let ppu = PPU::new_empty_rom();
-    let mut bus = Bus::new(ppu);
+    let mut bus = NESBus::new(ppu);
     bus.rom = Some(Box::from(rom));
-    let mut cpu = CPU::new(bus);
-    cpu.reset();
+    bus.cycles = 7;
+    bus.ppu.cycles = 21;
+    bus.ppu.scanline = 0;
 
-    cpu.bus.cycles = 7;
-    cpu.bus.ppu.cycles = 21;
-    cpu.bus.ppu.scanline = 0;
+    let mut cpu = CPU::new(Box::from(bus));
+    cpu.reset();
     cpu.register.pc = 0xC000;
 
     let mut index = 0;

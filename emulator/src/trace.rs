@@ -1,8 +1,9 @@
-use crate::cpu::CPU;
-use crate::opcodes;
-use crate::opcodes::{AddressingMode, Instruction, OpCode};
-use crate::register::RegisterField;
+use core::bus::BusPeripheral;
 use core::mem::Mem;
+use cpu6502::cpu::CPU;
+use cpu6502::opcodes;
+use cpu6502::opcodes::{AddressingMode, Instruction, OpCode};
+use cpu6502::register::RegisterField;
 
 pub fn trace_light(cpu: &mut CPU) -> String {
     let code = cpu.mem_read(cpu.register.pc);
@@ -155,9 +156,10 @@ pub fn trace(cpu: &mut CPU) -> String {
         cpu.register.read(RegisterField::Y),
         cpu.register.status.bits(),
         cpu.register.sp,
-        cpu.bus.ppu.scanline,
-        cpu.bus.ppu.cycles,
-        cpu.bus.cycles
+        cpu.bus
+            .get_clock_cycles_for_peripheral(BusPeripheral::PpuScanlines),
+        cpu.bus.get_clock_cycles_for_peripheral(BusPeripheral::Ppu),
+        cpu.bus.get_clock_cycles_for_peripheral(BusPeripheral::Cpu),
     )
     .to_ascii_uppercase()
 }
@@ -169,21 +171,22 @@ fn is_jmp_instruction(ops: &&OpCode) -> bool {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::bus::Bus;
-    use crate::cpu::CPU;
-    use crate::register::RegisterField;
+    use crate::bus::NESBus;
     use core::mem::Mem;
+    use cpu6502::cpu::CPU;
+    use cpu6502::register::RegisterField;
     use ppu::PPU;
 
     #[test]
     fn test_format_trace() {
-        let mut bus = Bus::new(PPU::new_empty_rom());
+        let ppu = PPU::new_empty_rom();
+        let mut bus = NESBus::new(ppu);
         bus.mem_write(100, 0xa2);
         bus.mem_write(101, 0x01);
         bus.mem_write(102, 0xca);
         bus.mem_write(103, 0x88);
         bus.mem_write(104, 0x00);
-        let mut cpu = CPU::new(bus);
+        let mut cpu = CPU::new(Box::from(bus));
 
         cpu.register.pc = 0x64;
         cpu.register.write(RegisterField::A, 1);
@@ -209,7 +212,7 @@ mod test {
 
     #[test]
     fn test_format_mem_access() {
-        let mut bus = Bus::new(PPU::new_empty_rom());
+        let mut bus = NESBus::new(PPU::new_empty_rom());
         // ORA ($33), Y
         bus.mem_write(100, 0x11);
         bus.mem_write(101, 0x33);
@@ -221,7 +224,7 @@ mod test {
         //target cell
         bus.mem_write(0x400, 0xAA);
 
-        let mut cpu = CPU::new(bus);
+        let mut cpu = CPU::new(Box::from(bus));
         cpu.register.pc = 0x64;
         let mut result: Vec<String> = vec![];
         cpu.run_with_callback(|cpu| {

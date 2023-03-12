@@ -14,6 +14,7 @@ bitflags! {
        }
 }
 
+#[derive(Copy, Clone)]
 pub struct Joypad {
     strobe: bool,
     button_index: u8,
@@ -54,6 +55,12 @@ impl Joypad {
 
     pub fn set_released(&mut self, button: JoypadButton) {
         self.button_status.set(button, false);
+    }
+}
+
+impl Default for Joypad {
+    fn default() -> Self {
+        Joypad::new()
     }
 }
 
@@ -110,11 +117,5 @@ mod test {
 
     fn start_polling(joypad: &mut Joypad) {
         joypad.write(1);
-    }
-}
-
-impl Default for Joypad {
-    fn default() -> Self {
-        Joypad::new()
     }
 }

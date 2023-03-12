@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 sdl2 = "0.35.2"
 core = { path = "core" }
+cpu6502 = { path = "cpu6502" }
 ppu = { path = "ppu" }
 emulator = { path = "emulator" }
 render = { path = "render" }
@@ -18,6 +19,7 @@ k9 = "0.11.6"
 [workspace]
 members = [
     "core",
+    "cpu6502",
     "ppu",
     "emulator",
     "render",
