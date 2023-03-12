@@ -238,6 +238,9 @@ impl Mem for PPU {
 #[cfg(test)]
 pub mod test {
     use super::*;
+    use crate::registers::control::ControlRegister;
+    use crate::registers::status::StatusRegister;
+    use k9::assert_equal;
 
     #[test]
     fn test_ppu_vram_writes() {
@@ -246,7 +249,7 @@ pub mod test {
         ppu.write_to_ppu_address(0x05);
         ppu.write_to_data(0x66);
 
-        assert_eq!(ppu.vram[0x0305], 0x66);
+        assert_equal!(ppu.vram[0x0305], 0x66);
     }
 
     #[test]
@@ -259,8 +262,8 @@ pub mod test {
         ppu.write_to_ppu_address(0x05);
 
         ppu.read_data(); //load_into_buffer
-        assert_eq!(ppu.registers.address.get(), 0x2306);
-        assert_eq!(ppu.read_data(), 0x66);
+        assert_equal!(ppu.registers.address.get(), 0x2306);
+        assert_equal!(ppu.read_data(), 0x66);
     }
 
     #[test]
@@ -274,8 +277,8 @@ pub mod test {
         ppu.write_to_ppu_address(0xff);
 
         ppu.read_data(); //load_into_buffer
-        assert_eq!(ppu.read_data(), 0x66);
-        assert_eq!(ppu.read_data(), 0x77);
+        assert_equal!(ppu.read_data(), 0x66);
+        assert_equal!(ppu.read_data(), 0x77);
     }
 
     #[test]
@@ -290,9 +293,9 @@ pub mod test {
         ppu.write_to_ppu_address(0xff);
 
         ppu.read_data(); //load_into_buffer
-        assert_eq!(ppu.read_data(), 0x66);
-        assert_eq!(ppu.read_data(), 0x77);
-        assert_eq!(ppu.read_data(), 0x88);
+        assert_equal!(ppu.read_data(), 0x66);
+        assert_equal!(ppu.read_data(), 0x77);
+        assert_equal!(ppu.read_data(), 0x88);
     }
 
     // Horizontal: https://wiki.nesdev.com/w/index.php/Mirroring
@@ -315,13 +318,13 @@ pub mod test {
         ppu.write_to_ppu_address(0x05);
 
         ppu.read_data(); //load into buffer
-        assert_eq!(ppu.read_data(), 0x66); //read from A
+        assert_equal!(ppu.read_data(), 0x66); //read from A
 
         ppu.write_to_ppu_address(0x2C);
         ppu.write_to_ppu_address(0x05);
 
         ppu.read_data(); //load into buffer
-        assert_eq!(ppu.read_data(), 0x77); //read from b
+        assert_equal!(ppu.read_data(), 0x77); //read from b
     }
 
     // Vertical: https://wiki.nesdev.com/w/index.php/Mirroring
@@ -345,13 +348,13 @@ pub mod test {
         ppu.write_to_ppu_address(0x05);
 
         ppu.read_data(); //load into buffer
-        assert_eq!(ppu.read_data(), 0x66); //read from a
+        assert_equal!(ppu.read_data(), 0x66); //read from a
 
         ppu.write_to_ppu_address(0x24);
         ppu.write_to_ppu_address(0x05);
 
         ppu.read_data(); //load into buffer
-        assert_eq!(ppu.read_data(), 0x77); //read from B
+        assert_equal!(ppu.read_data(), 0x77); //read from B
     }
 
     #[test]
@@ -372,7 +375,7 @@ pub mod test {
         ppu.write_to_ppu_address(0x05);
 
         ppu.read_data(); //load_into_buffer
-        assert_eq!(ppu.read_data(), 0x66);
+        assert_equal!(ppu.read_data(), 0x66);
     }
 
     #[test]
@@ -385,8 +388,8 @@ pub mod test {
         ppu.write_to_ppu_address(0x05);
 
         ppu.read_data(); //load into_buffer
-        assert_eq!(ppu.read_data(), 0x66);
-        // assert_eq!(ppu.addr.read(), 0x0306)
+        assert_equal!(ppu.read_data(), 0x66);
+        // assert_equal!(ppu.addr.read(), 0x0306)
     }
 
     #[test]
@@ -396,8 +399,8 @@ pub mod test {
 
         let status = ppu.read_status();
 
-        assert_eq!(status >> 7, 1);
-        assert_eq!(ppu.registers.status.snapshot() >> 7, 0);
+        assert_equal!(status >> 7, 1);
+        assert_equal!(ppu.registers.status.snapshot() >> 7, 0);
     }
 
     #[test]
@@ -408,10 +411,10 @@ pub mod test {
         ppu.write_to_oam_data(0x77);
 
         ppu.write_to_oam_address(0x10);
-        assert_eq!(ppu.read_oam_data(), 0x66);
+        assert_equal!(ppu.read_oam_data(), 0x66);
 
         ppu.write_to_oam_address(0x11);
-        assert_eq!(ppu.read_oam_data(), 0x77);
+        assert_equal!(ppu.read_oam_data(), 0x77);
     }
 
     #[test]
@@ -426,12 +429,77 @@ pub mod test {
         ppu.write_oam_dma(&data);
 
         ppu.write_to_oam_address(0xf); //wrap around
-        assert_eq!(ppu.read_oam_data(), 0x88);
+        assert_equal!(ppu.read_oam_data(), 0x88);
 
         ppu.write_to_oam_address(0x10);
-        assert_eq!(ppu.read_oam_data(), 0x77);
+        assert_equal!(ppu.read_oam_data(), 0x77);
 
         ppu.write_to_oam_address(0x11);
-        assert_eq!(ppu.read_oam_data(), 0x66);
+        assert_equal!(ppu.read_oam_data(), 0x66);
+    }
+
+    #[test]
+    fn test_tick_assigns_nmi_correctly() {
+        let mut ppu = PPU::new_empty_rom();
+        ppu.registers
+            .control
+            .set(ControlRegister::GENERATE_NMI_AT_VBI, true);
+
+        // Case 1: Cycles is less than 341, scanline should not change
+        let result = ppu.tick(100);
+        assert_equal!(result, false);
+        assert_equal!(ppu.cycles, 100);
+        assert_equal!(ppu.scanline, 0);
+        assert_equal!(ppu.nmi_interrupt, None);
+
+        // Case 2: Cycles is greater than or equal to 341 but scanline < 241
+        // scanline should increase by 1
+        let result = ppu.tick(241);
+        assert_equal!(result, false);
+        assert_equal!(ppu.cycles, 0);
+        assert_equal!(ppu.scanline, 1);
+        assert_equal!(ppu.nmi_interrupt, None);
+
+        // Generate 241 scanlines
+        for _ in 1..=241 {
+            ppu.tick(100);
+            ppu.tick(241);
+        }
+
+        // Case 3: Cycles is greater than or equal to 341 and scanline is 241
+        // vblank status should be set and nmi interrupt should be generated if configured to do so
+        assert_equal!(ppu.cycles, 0);
+        assert_equal!(ppu.scanline, 242);
+        assert_equal!(ppu.nmi_interrupt, Some(1));
+        assert!(ppu
+            .registers
+            .status
+            .contains(StatusRegister::VBLANK_STARTED));
+        assert!(!ppu
+            .registers
+            .status
+            .contains(StatusRegister::SPRITE_ZERO_HIT));
+
+        // Case 4: Scanline is greater than or equal to 262
+        // scanline should reset to 0 and vblank status should be reset
+        for _ in 241..=259 {
+            ppu.tick(100);
+            ppu.tick(241);
+        }
+
+        ppu.tick(100);
+        let result = ppu.tick(241);
+        assert_equal!(result, true);
+        assert_equal!(ppu.cycles, 0);
+        assert_equal!(ppu.scanline, 0);
+        assert_equal!(ppu.nmi_interrupt, None);
+        assert!(!ppu
+            .registers
+            .status
+            .contains(StatusRegister::VBLANK_STARTED));
+        assert!(!ppu
+            .registers
+            .status
+            .contains(StatusRegister::SPRITE_ZERO_HIT));
     }
 }

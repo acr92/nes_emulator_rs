@@ -52,37 +52,40 @@ fn main() {
 
     let ppu = PPU::new(rom.chr_rom.clone(), rom.screen_mirroring);
     let mut frame = Frame::new();
-    let mut bus = Bus::new_with_callback(ppu, Box::new(move |ppu, joypad| {
-        render::render(ppu, &mut frame);
-        texture
-            .update(None, &frame.data, Frame::WIDTH * Frame::RGB_SIZE)
-            .unwrap();
+    let mut bus = Bus::new_with_callback(
+        ppu,
+        Box::new(move |ppu, joypad| {
+            render::render(ppu, &mut frame);
+            texture
+                .update(None, &frame.data, Frame::WIDTH * Frame::RGB_SIZE)
+                .unwrap();
 
-        canvas.copy(&texture, None, None).unwrap();
+            canvas.copy(&texture, None, None).unwrap();
 
-        canvas.present();
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. }
-                | Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
-                    ..
-                } => std::process::exit(0),
+            canvas.present();
+            for event in event_pump.poll_iter() {
+                match event {
+                    Event::Quit { .. }
+                    | Event::KeyDown {
+                        keycode: Some(Keycode::Escape),
+                        ..
+                    } => std::process::exit(0),
 
-                Event::KeyDown { keycode, .. } => {
-                    if let Some(key) = key_map.get(&keycode.unwrap_or(Keycode::AcBack)) {
-                        joypad.set_pressed(*key);
+                    Event::KeyDown { keycode, .. } => {
+                        if let Some(key) = key_map.get(&keycode.unwrap_or(Keycode::AcBack)) {
+                            joypad.set_pressed(*key);
+                        }
                     }
-                }
-                Event::KeyUp { keycode, .. } => {
-                    if let Some(key) = key_map.get(&keycode.unwrap_or(Keycode::AcBack)) {
-                        joypad.set_released(*key);
+                    Event::KeyUp { keycode, .. } => {
+                        if let Some(key) = key_map.get(&keycode.unwrap_or(Keycode::AcBack)) {
+                            joypad.set_released(*key);
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
-        }
-    }));
+        }),
+    );
     bus.rom = Some(Box::from(rom));
 
     let mut cpu = CPU::new(bus);

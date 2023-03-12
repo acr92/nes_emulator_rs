@@ -66,8 +66,7 @@ impl<'a> Bus<'a> {
         Bus::new_with_callback(ppu, Box::new(|_ppu, _joypad| {}))
     }
 
-    pub fn new_with_callback(ppu: PPU, gameloop_callback: GameloopCallback) -> Bus
-    {
+    pub fn new_with_callback(ppu: PPU, gameloop_callback: GameloopCallback) -> Bus {
         Bus {
             cpu_vram: [0; CPU_VRAM_SIZE],
             ppu,
