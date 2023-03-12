@@ -81,7 +81,6 @@ impl PPU {
                 self.nmi_interrupt = None;
                 self.registers.status.set_sprite_zero_hit(false);
                 self.registers.status.reset_vblank_status();
-                // self.registers.control = ControlRegister::new();
             }
         }
 
@@ -227,7 +226,7 @@ impl Mem for PPU {
         }
 
         match register.field {
-            RegisterField::Status => self.read_status(),
+            RegisterField::Status => (self.read_status() & 0xE0) | (self.internal_data_buf & 0x1F),
             RegisterField::OAMData => self.read_oam_data(),
             RegisterField::Data => self.read_data(),
             _ => panic!("Unexpected read on {:#?}", register),
@@ -651,5 +650,26 @@ pub mod test {
         ppu.registers.address.update(0x3F);
         ppu.registers.address.update(0x3F);
         assert_equal!(ppu.read_data(), 0xAA);
+    }
+
+    #[test]
+    fn test_status_read_contains_bits_from_internal_data_buffer() {
+        let mut ppu = PPU::new_empty_rom();
+
+        // Read status
+        assert_equal!(ppu.mem_read(0x2002), 0);
+
+        // Write to 0x20AA = 0xFA
+        ppu.mem_write(0x2006, 0x20);
+        ppu.mem_write(0x2006, 0xAA);
+        ppu.mem_write(0x2007, 0xFA);
+
+        // First read will return internal_data_buf (0x00), but assign 0xFA to internal_data_buf
+        ppu.mem_write(0x2006, 0x20);
+        ppu.mem_write(0x2006, 0xAA);
+        assert_equal!(ppu.mem_read(0x2007), 0x00);
+
+        // Now the lower status bits should be affected
+        assert_equal!(ppu.mem_read(0x2002), 0x1A);
     }
 }
