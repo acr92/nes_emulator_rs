@@ -1,4 +1,5 @@
 use bitflags::bitflags;
+use core::ppu::{NAMETABLE_0, NAMETABLE_1, NAMETABLE_2, NAMETABLE_3};
 
 bitflags! {
     /// # Controller Register (PPUCTRL) https://www.nesdev.org/wiki/PPU_registers
@@ -35,6 +36,16 @@ bitflags! {
 impl ControlRegister {
     pub fn new() -> Self {
         ControlRegister::from_bits_truncate(0)
+    }
+
+    pub fn nametable_address(&self) -> u16 {
+        match self.bits & 0b11 {
+            0 => NAMETABLE_0,
+            1 => NAMETABLE_1,
+            2 => NAMETABLE_2,
+            3 => NAMETABLE_3,
+            _ => panic!("Not possible"),
+        }
     }
 
     pub fn vram_address_increment(&self) -> u8 {

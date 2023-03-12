@@ -18,9 +18,14 @@ pub static SYSTEM_PALLETE: [(u8,u8,u8); 64] = [
     (0x99, 0xFF, 0xFC), (0xDD, 0xDD, 0xDD), (0x11, 0x11, 0x11), (0x11, 0x11, 0x11)
 ];
 
-pub(crate) fn background_palette(ppu: &PPU, tile_column: usize, tile_row: usize) -> [u8; 4] {
+pub(crate) fn background_palette(
+    ppu: &PPU,
+    attribute_table: &[u8],
+    tile_column: usize,
+    tile_row: usize,
+) -> [u8; 4] {
     let table_index = tile_row / 4 * 8 + tile_column / 4;
-    let attribute_byte = ppu.vram[0x3C0 + table_index]; // TODO: stop using hardcoded NT1
+    let attribute_byte = attribute_table[table_index];
 
     let palette_index = match (tile_column % 4 / 2, tile_row % 4 / 2) {
         (0, 0) => attribute_byte & 0b11,

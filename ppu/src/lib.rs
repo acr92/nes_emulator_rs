@@ -14,7 +14,6 @@ const NAMETABLE_END: u16 = 0x2FFF;
 const NAMETABLE_MIRROR_START: u16 = 0x3000;
 const NAMETABLE_MIRROR_END: u16 = 0x3EFF;
 const PALETTE_RAM_START: u16 = 0x3F00;
-const PALETTE_MASK: u16 = 0x3F20 - 1;
 const PALETTE_RAM_END: u16 = 0x3FFF;
 
 const PALETTE_TABLE_SIZE: usize = 32;
@@ -27,7 +26,7 @@ pub struct PPU {
     pub palette_table: [u8; PALETTE_TABLE_SIZE],
     pub vram: [u8; PPU_VRAM_SIZE],
     pub oam_data: [u8; OAM_DATA_SIZE],
-    mirroring: Mirroring,
+    pub mirroring: Mirroring,
     pub registers: Registers,
     internal_data_buf: u8,
 
@@ -72,7 +71,8 @@ impl PPU {
                 self.registers.status.set_vblank_status(true);
                 self.registers.status.set_sprite_zero_hit(false);
                 if self.registers.control.generate_vblank_nmi() {
-                    self.nmi_interrupt = Some(1)
+                    self.nmi_interrupt = Some(1);
+                    return true;
                 }
             }
 
@@ -81,7 +81,6 @@ impl PPU {
                 self.nmi_interrupt = None;
                 self.registers.status.set_sprite_zero_hit(false);
                 self.registers.status.reset_vblank_status();
-                return true;
             }
         }
 
@@ -120,7 +119,7 @@ impl PPU {
                 addr
             ),
             PALETTE_RAM_START..=PALETTE_RAM_END => {
-                self.palette_table[((addr & PALETTE_MASK) - PALETTE_RAM_START) as usize]
+                self.palette_table[self.map_palette_table_address_to_index(addr)]
             }
             _ => panic!("Unexpected access to mirrored space {:04X}", addr),
         }
@@ -139,13 +138,24 @@ impl PPU {
                 addr
             ),
             PALETTE_RAM_START..=PALETTE_RAM_END => {
-                self.palette_table[((addr & PALETTE_MASK) - PALETTE_RAM_START) as usize] = value
+                self.palette_table[self.map_palette_table_address_to_index(addr)] = value;
             }
             _ => panic!("Unexpected access to mirrored space {:04X}", addr),
         }
 
         self.increment_vram_addr();
     }
+
+    fn map_palette_table_address_to_index(&self, addr: u16) -> usize {
+        let addr = (addr - PALETTE_RAM_START) as usize % self.palette_table.len();
+
+        // Addresses $3F10/$3F14/$3F18/$3F1C are mirrors of $3F00/$3F04/$3F08/$3F0C
+        match addr {
+            0x10 | 0x14 | 0x18 | 0x1C => addr - 0x10,
+            _ => addr,
+        }
+    }
+
     fn mirror_vram_addr(&self, addr: u16) -> u16 {
         let mirrored_vram = addr & 0b10111111111111; // mirror down 0x3000-0x3eff to 0x2000 - 0x2eff
         let vram_index = mirrored_vram - 0x2000; // to vram vector
@@ -492,21 +502,22 @@ pub mod test {
     }
 
     #[test]
-    fn test_tick_on_241_scanlines_assign_nmi_interrupt() {
+    fn test_tick_on_241_scanlines_assign_nmi_interrupt_and_return_true_for_new_frame() {
         let mut ppu = PPU::new_empty_rom();
         ppu.registers
             .control
             .set(ControlRegister::GENERATE_NMI_AT_VBI, true);
 
-        // Generate 241 scanlines
-        for _ in 0..=241 {
+        // Generate 240 scanlines
+        for _ in 0..240 {
             tick_one_scanline(&mut ppu);
         }
 
         // Case 3: Cycles is greater than or equal to 341 and scanline is 241
         // vblank status should be set and nmi interrupt should be generated if configured to do so
+        assert!(tick_one_scanline(&mut ppu));
         assert_equal!(ppu.cycles, 0);
-        assert_equal!(ppu.scanline, 242);
+        assert_equal!(ppu.scanline, 241);
         assert_equal!(ppu.nmi_interrupt, Some(1));
         assert!(ppu
             .registers
@@ -533,7 +544,7 @@ pub mod test {
 
         // After 262 scanlines, remove NMI interrupt
         let result = tick_one_scanline(&mut ppu);
-        assert_equal!(result, true);
+        assert_equal!(result, false);
         assert_equal!(ppu.cycles, 0);
         assert_equal!(ppu.scanline, 0);
         assert_equal!(ppu.nmi_interrupt, None);
@@ -609,5 +620,35 @@ pub mod test {
             .registers
             .status
             .contains(StatusRegister::SPRITE_ZERO_HIT));
+    }
+
+    #[test]
+    fn test_read_data_palette() {
+        let mut ppu = PPU::new_empty_rom();
+        ppu.palette_table[0] = 0xFF;
+        ppu.palette_table[31] = 0xAA;
+
+        ppu.registers.address.update(0x3F);
+        ppu.registers.address.update(0x00);
+        assert_equal!(ppu.read_data(), 0xFF);
+
+        ppu.registers.address.update(0x3F);
+        ppu.registers.address.update(0x1F);
+        assert_equal!(ppu.read_data(), 0xAA);
+    }
+
+    #[test]
+    fn test_read_data_palette_mirroring() {
+        let mut ppu = PPU::new_empty_rom();
+        ppu.palette_table[0] = 0xFF;
+        ppu.palette_table[31] = 0xAA;
+
+        ppu.registers.address.update(0x3F);
+        ppu.registers.address.update(0x10);
+        assert_equal!(ppu.read_data(), 0xFF);
+
+        ppu.registers.address.update(0x3F);
+        ppu.registers.address.update(0x3F);
+        assert_equal!(ppu.read_data(), 0xAA);
     }
 }

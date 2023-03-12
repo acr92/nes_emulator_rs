@@ -1,11 +1,16 @@
 use crate::frame::Frame;
 use crate::oam::Oam;
 use crate::palette::{background_palette, sprite_palette};
+use crate::rectangle::Rectangle;
+use core::cartridge::Mirroring;
+use core::ppu::{NAMETABLE_0, NAMETABLE_1, NAMETABLE_2, NAMETABLE_3};
 use ppu::PPU;
 
+mod debug;
 pub mod frame;
 mod oam;
 mod palette;
+mod rectangle;
 
 /*
 WARNING This is quite a drastic simplification that limits the types of games it will be
@@ -22,42 +27,58 @@ require more accuracy in PPU emulation, however.
 const SPRITE_COLOR_INDEX_TRANSPARENT: u8 = 0;
 
 pub fn render(ppu: &PPU, frame: &mut Frame) {
-    let bank = ppu.registers.control.background_pattern_table_address();
+    let scroll_x = (ppu.registers.scroll.scroll_x) as usize;
+    let scroll_y = (ppu.registers.scroll.scroll_y) as usize;
 
-    for i in 0..0x03C0 {
-        let tile = ppu.vram[i] as u16;
-        let tile_x = i % 32;
-        let tile_y = i / 32;
-        let tile = &ppu.chr_rom[(bank + tile * 16) as usize..=(bank + tile * 16 + 15) as usize];
-        let palette = background_palette(ppu, tile_x, tile_y);
-
-        for y in 0..=7 {
-            let mut upper = tile[y];
-            let mut lower = tile[y + 8];
-
-            for x in (0..=7).rev() {
-                let value = (1 & lower) << 1 | (1 & upper);
-                upper >>= 1;
-                lower >>= 1;
-                let rgb = match value {
-                    0 => palette::SYSTEM_PALLETE[ppu.palette_table[0] as usize],
-                    1 => palette::SYSTEM_PALLETE[palette[1] as usize],
-                    2 => palette::SYSTEM_PALLETE[palette[2] as usize],
-                    3 => palette::SYSTEM_PALLETE[palette[3] as usize],
-                    _ => panic!("can't happen"),
-                };
-
-                frame.set_pixel(tile_x * 8 + x, tile_y * 8 + y, rgb)
-            }
+    let nametable_address = ppu.registers.control.nametable_address();
+    let (main_nametable, second_nametable) = match (&ppu.mirroring, nametable_address) {
+        (Mirroring::Vertical, NAMETABLE_0)
+        | (Mirroring::Vertical, NAMETABLE_2)
+        | (Mirroring::Horizontal, NAMETABLE_0)
+        | (Mirroring::Horizontal, NAMETABLE_1) => (&ppu.vram[0..0x400], &ppu.vram[0x400..0x800]),
+        (Mirroring::Vertical, NAMETABLE_1)
+        | (Mirroring::Vertical, NAMETABLE_3)
+        | (Mirroring::Horizontal, NAMETABLE_2)
+        | (Mirroring::Horizontal, NAMETABLE_3) => (&ppu.vram[0x400..0x800], &ppu.vram[0..0x400]),
+        (_, _) => {
+            panic!("Not supported mirroring type {:?}", ppu.mirroring);
         }
+    };
+
+    render_name_table(
+        ppu,
+        frame,
+        main_nametable,
+        Rectangle::new(scroll_x, scroll_y, 256, 240),
+        -(scroll_x as isize),
+        -(scroll_y as isize),
+    );
+    if scroll_x > 0 {
+        render_name_table(
+            ppu,
+            frame,
+            second_nametable,
+            Rectangle::new(0, 0, scroll_x, 240),
+            (256 - scroll_x) as isize,
+            0,
+        );
+    } else if scroll_y > 0 {
+        render_name_table(
+            ppu,
+            frame,
+            second_nametable,
+            Rectangle::new(0, 0, 256, scroll_y),
+            0,
+            (240 - scroll_y) as isize,
+        );
     }
 
     for oam in Oam::oam_iter(ppu) {
         let sprite_palette = sprite_palette(ppu, oam.palette_index());
 
         let bank = ppu.registers.control.sprite_pattern_table_address();
-        let tile = &ppu.chr_rom
-            [(bank + oam.tile_index * 16) as usize..=(bank + oam.tile_index * 16 + 15) as usize];
+        let tile_ram_position = (bank + oam.tile_index * 16) as usize;
+        let tile = &ppu.chr_rom[tile_ram_position..=tile_ram_position + 15];
 
         for y in 0..=7 {
             let mut upper = tile[y];
@@ -81,6 +102,60 @@ pub fn render(ppu: &PPU, frame: &mut Frame) {
                     (true, false) => frame.set_pixel(oam.tile_x + 7 - x, oam.tile_y + y, rgb),
                     (false, true) => frame.set_pixel(oam.tile_x + x, oam.tile_y + 7 - y, rgb),
                     (true, true) => frame.set_pixel(oam.tile_x + 7 - x, oam.tile_y + 7 - y, rgb),
+                }
+            }
+        }
+    }
+}
+
+fn render_name_table(
+    ppu: &PPU,
+    frame: &mut Frame,
+    name_table: &[u8],
+    viewport: Rectangle,
+    shift_x: isize,
+    shift_y: isize,
+) {
+    let bank = ppu.registers.control.background_pattern_table_address();
+
+    let attribute_table = &name_table[0x3C0..0x400];
+
+    for (i, &name) in name_table.iter().enumerate().take(0x3C0) {
+        let tile_column = i % 32;
+        let tile_row = i / 32;
+        let tile_index = name as u16;
+        let tile_ram_start = (bank + tile_index * 16) as usize;
+        let tile = &ppu.chr_rom[tile_ram_start..=tile_ram_start + 15];
+        let palette = background_palette(ppu, attribute_table, tile_column, tile_row);
+
+        for y in 0..=7 {
+            let mut upper = tile[y];
+            let mut lower = tile[y + 8];
+
+            for x in (0..=7).rev() {
+                let value = (1 & lower) << 1 | (1 & upper);
+                upper >>= 1;
+                lower >>= 1;
+
+                let rgb = match value {
+                    0 => palette::SYSTEM_PALLETE[ppu.palette_table[0] as usize],
+                    1 => palette::SYSTEM_PALLETE[palette[1] as usize],
+                    2 => palette::SYSTEM_PALLETE[palette[2] as usize],
+                    3 => palette::SYSTEM_PALLETE[palette[3] as usize],
+                    _ => panic!("can't happen"),
+                };
+
+                let pixel_x = tile_column * 8 + x;
+                let pixel_y = tile_row * 8 + y;
+
+                if pixel_x >= viewport.x1
+                    && pixel_x < viewport.x2
+                    && pixel_y >= viewport.y1
+                    && pixel_y < viewport.y2
+                {
+                    let shifted_x = (shift_x + pixel_x as isize) as usize;
+                    let shifted_y = (shift_y + pixel_y as isize) as usize;
+                    frame.set_pixel(shifted_x, shifted_y, rgb);
                 }
             }
         }

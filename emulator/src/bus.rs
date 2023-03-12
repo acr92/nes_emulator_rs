@@ -94,7 +94,6 @@ impl<'a> Bus<'a> {
         self.cycles += cycles as usize;
 
         let new_frame = self.ppu.tick(cycles * 3);
-
         if new_frame {
             (self.gameloop_callback)(&self.ppu, &mut self.joypad1);
         }
