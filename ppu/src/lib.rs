@@ -438,14 +438,33 @@ pub mod test {
         assert_equal!(ppu.read_oam_data(), 0x66);
     }
 
+    fn tick_one_scanline(ppu: &mut PPU) -> bool {
+        ppu.tick(100);
+        ppu.tick(241)
+    }
+
     #[test]
-    fn test_tick_assigns_nmi_correctly() {
+    fn test_tick_cycles_less_than_341_scanline_should_not_change() {
         let mut ppu = PPU::new_empty_rom();
         ppu.registers
             .control
             .set(ControlRegister::GENERATE_NMI_AT_VBI, true);
 
         // Case 1: Cycles is less than 341, scanline should not change
+        let result = ppu.tick(100);
+        assert_equal!(result, false);
+        assert_equal!(ppu.cycles, 100);
+        assert_equal!(ppu.scanline, 0);
+        assert_equal!(ppu.nmi_interrupt, None);
+    }
+
+    #[test]
+    fn test_tick_cycles_greater_than_341_scanline_less_than_241_scanline_increase_by_one() {
+        let mut ppu = PPU::new_empty_rom();
+        ppu.registers
+            .control
+            .set(ControlRegister::GENERATE_NMI_AT_VBI, true);
+
         let result = ppu.tick(100);
         assert_equal!(result, false);
         assert_equal!(ppu.cycles, 100);
@@ -459,11 +478,18 @@ pub mod test {
         assert_equal!(ppu.cycles, 0);
         assert_equal!(ppu.scanline, 1);
         assert_equal!(ppu.nmi_interrupt, None);
+    }
+
+    #[test]
+    fn test_tick_on_241_scanlines_assign_nmi_interrupt() {
+        let mut ppu = PPU::new_empty_rom();
+        ppu.registers
+            .control
+            .set(ControlRegister::GENERATE_NMI_AT_VBI, true);
 
         // Generate 241 scanlines
-        for _ in 1..=241 {
-            ppu.tick(100);
-            ppu.tick(241);
+        for _ in 0..=241 {
+            tick_one_scanline(&mut ppu);
         }
 
         // Case 3: Cycles is greater than or equal to 341 and scanline is 241
@@ -479,16 +505,23 @@ pub mod test {
             .registers
             .status
             .contains(StatusRegister::SPRITE_ZERO_HIT));
+    }
 
-        // Case 4: Scanline is greater than or equal to 262
-        // scanline should reset to 0 and vblank status should be reset
-        for _ in 241..=259 {
-            ppu.tick(100);
-            ppu.tick(241);
+    #[test]
+    fn test_tick_resets_nmi_after_262_scanlines() {
+        let mut ppu = PPU::new_empty_rom();
+        ppu.registers
+            .control
+            .set(ControlRegister::GENERATE_NMI_AT_VBI, true);
+
+        // Generate 261 scanlines
+        for _ in 0..261 {
+            tick_one_scanline(&mut ppu);
         }
+        assert_equal!(ppu.nmi_interrupt, Some(1));
 
-        ppu.tick(100);
-        let result = ppu.tick(241);
+        // After 262 scanlines, remove NMI interrupt
+        let result = tick_one_scanline(&mut ppu);
         assert_equal!(result, true);
         assert_equal!(ppu.cycles, 0);
         assert_equal!(ppu.scanline, 0);
