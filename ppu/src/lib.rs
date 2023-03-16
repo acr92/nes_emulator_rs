@@ -113,7 +113,7 @@ impl PPU {
                 } else if self.registers.vram_addr.get_coarse_y() == 31 {
                     self.registers.vram_addr.set_coarse_y(0);
                 } else {
-                    self.registers.vram_addr.set_coarse_y(self.registers.vram_addr.get_coarse_y());
+                    self.registers.vram_addr.set_coarse_y(self.registers.vram_addr.get_coarse_y().wrapping_add(1));
                 }
             }
         }
