@@ -1,6 +1,6 @@
 pub struct AddressRegister {
-    value: (u8, u8),
-    hi_ptr: bool,
+    pub value: (u8, u8),
+    pub hi_ptr: bool,
 }
 
 impl AddressRegister {

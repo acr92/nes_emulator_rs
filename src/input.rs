@@ -5,6 +5,7 @@ use std::collections::HashMap;
 #[derive(Copy, Clone)]
 pub enum InputAction {
     CaptureScreenshot,
+    FlipChrBank,
 }
 
 #[derive(Copy, Clone)]
@@ -46,6 +47,7 @@ pub fn create_keymap() -> HashMap<Keycode, InputButton> {
     key_map.insert(Keycode::S, InputButton::Joypad(JoypadButton::BUTTON_B));
 
     key_map.insert(Keycode::G, InputButton::Key(InputAction::CaptureScreenshot));
+    key_map.insert(Keycode::H, InputButton::Key(InputAction::FlipChrBank));
 
     key_map
 }

@@ -16,11 +16,13 @@ use sdl2::surface::Surface;
 use sdl2::EventPump;
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc, RwLock};
 use std::sync::mpsc::{Receiver, Sender};
 use std::{env, thread};
+use std::rc::Rc;
 
 const WINDOW_SCALE: f32 = 3.0;
+
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -37,14 +39,17 @@ fn main() {
     let (tx_joycon, rx_joycon): (Sender<Vec<InputEvent>>, Receiver<Vec<InputEvent>>) =
         mpsc::channel();
 
-    let render_thread = thread::spawn(move || create_render_thread(rx_frame, tx_joycon));
+    let bank = Arc::new(RwLock::new(0 as usize));
+    let bank_for_render = bank.clone();
+
+    let render_thread = thread::spawn(move || create_render_thread(rx_frame, tx_joycon, bank_for_render));
 
     let ppu = PPU::new(rom.chr_rom.clone(), rom.screen_mirroring);
     let mut bus = NESBus::new_with_callback(
         ppu,
         Box::new(move |ppu, joypad| {
             let mut game_frame = Frame::new();
-            render::render(ppu, &mut game_frame);
+            game_frame.data = ppu.frame.to_vec();
 
             let mut nt1_frame = Frame::new();
             let viewport = Rectangle::new(0, 0, Frame::WIDTH, Frame::HEIGHT);
@@ -54,8 +59,13 @@ fn main() {
             let viewport = Rectangle::new(0, 0, Frame::WIDTH, Frame::HEIGHT);
             render::render_name_table(ppu, &mut nt2_frame, &ppu.vram[0x400..0x800], viewport, 0, 0);
 
+            let chr_frame = {
+                let guard = bank.read().unwrap();
+                render::debug::show_tiles(ppu.chr_rom.as_slice(), *guard)
+            };
+
             tx_frame
-                .send(vec![game_frame, nt1_frame, nt2_frame])
+                .send(vec![game_frame, nt1_frame, nt2_frame, chr_frame])
                 .expect("Should send frames");
 
             for key_event in rx_joycon.recv().expect("Should receive joycon state") {
@@ -74,7 +84,7 @@ fn main() {
         .expect("Should be able to attach to the render thread");
 }
 
-fn create_render_thread(rx_frame: Receiver<Vec<Frame>>, tx_joycon: Sender<Vec<InputEvent>>) -> ! {
+fn create_render_thread(rx_frame: Receiver<Vec<Frame>>, tx_joycon: Sender<Vec<InputEvent>>, bank: Arc<RwLock<usize>>) -> ! {
     println!("Started render thread");
 
     let sdl_context = sdl2::init().unwrap();
@@ -120,6 +130,14 @@ fn create_render_thread(rx_frame: Receiver<Vec<Frame>>, tx_joycon: Sender<Vec<In
         )
         .unwrap();
 
+    let mut chr_rom_texture = creator
+        .create_texture_target(
+            PixelFormatEnum::RGB24,
+            Frame::WIDTH as u32,
+            Frame::HEIGHT as u32,
+        )
+        .unwrap();
+
     loop {
         let mut frames = rx_frame.recv().unwrap();
 
@@ -127,6 +145,7 @@ fn create_render_thread(rx_frame: Receiver<Vec<Frame>>, tx_joycon: Sender<Vec<In
         // TODO: clean this up
         let nt1_frame = &frames[1];
         let nt2_frame = &frames[2];
+        let chr_rom_frame = &frames[3];
 
         game_texture
             .update(None, &game_frame.data, Frame::WIDTH * Frame::RGB_SIZE)
@@ -137,12 +156,21 @@ fn create_render_thread(rx_frame: Receiver<Vec<Frame>>, tx_joycon: Sender<Vec<In
         nt2_texture
             .update(None, &nt2_frame.data, Frame::WIDTH * Frame::RGB_SIZE)
             .unwrap();
+        chr_rom_texture.update(None, &chr_rom_frame.data, Frame::WIDTH * Frame::RGB_SIZE)
+            .unwrap();
 
         canvas
             .copy(
                 &game_texture,
                 None,
                 Some(Rect::new(0, 0, Frame::WIDTH as u32, Frame::HEIGHT as u32)),
+            )
+            .unwrap();
+        canvas
+            .copy(
+                &chr_rom_texture,
+                None,
+                Some(Rect::new(Frame::WIDTH as i32, 0, Frame::WIDTH as u32, Frame::HEIGHT as u32)),
             )
             .unwrap();
         canvas
@@ -182,6 +210,9 @@ fn create_render_thread(rx_frame: Receiver<Vec<Frame>>, tx_joycon: Sender<Vec<In
 
                 if matches!(key, InputAction::CaptureScreenshot) {
                     save_screenshot(&mut frames[0]).unwrap();
+                } else if matches!(key, InputAction::FlipChrBank) {
+                    let mut bank_ref = bank.write().unwrap();
+                    *bank_ref = if *bank_ref == 0 { 1 } else { 0 };
                 }
             }
         }

@@ -3,9 +3,13 @@ use crate::register::{
 };
 use core::cartridge::Mirroring;
 use core::mem::Mem;
+use crate::palette::SYSTEM_PALLETE;
+use crate::registers::control::ControlRegister;
+use crate::registers::mask::MaskRegister;
 
 mod register;
 mod registers;
+mod palette;
 
 const PATTERN_TABLE_START: u16 = 0x0000;
 const PATTERN_TABLE_END: u16 = 0x1FFF;
@@ -21,6 +25,8 @@ const PPU_VRAM_SIZE: usize = 2048;
 pub const CHR_ROM_BANK_SIZE: usize = 0x1000;
 pub const OAM_DATA_SIZE: usize = 256;
 
+const FRAME_SIZE: usize = 256 * 240 * 3;
+
 pub struct PPU {
     pub chr_rom: Vec<u8>,
     pub palette_table: [u8; PALETTE_TABLE_SIZE],
@@ -30,9 +36,22 @@ pub struct PPU {
     pub registers: Registers,
     internal_data_buf: u8,
 
-    pub scanline: u16,
+    pub scanline: i16,
     pub cycles: usize,
     pub nmi_interrupt: Option<u8>,
+
+    pub frame: [u8; FRAME_SIZE],
+
+    bg_next_tile_id: u8,
+    bg_next_tile_attrib: u8,
+    bg_next_tile_lsb: u8,
+    bg_next_tile_msb: u8,
+    bg_shifter_pattern_lo: u16,
+    bg_shifter_pattern_hi: u16,
+    bg_shifter_attrib_lo: u16,
+    bg_shifter_attrib_hi: u16,
+    address_latch: u8,
+    fine_x: u8,
 }
 
 impl PPU {
@@ -51,40 +70,247 @@ impl PPU {
             registers: Registers::new(),
             internal_data_buf: 0,
 
-            scanline: 0,
+            scanline: -1,
             cycles: 0,
             nmi_interrupt: None,
+
+            frame: [0x1A; FRAME_SIZE],
+
+            bg_next_tile_id: 0,
+            bg_next_tile_attrib: 0,
+            bg_next_tile_lsb: 0,
+            bg_next_tile_msb: 0,
+            bg_shifter_pattern_lo: 0,
+            bg_shifter_pattern_hi: 0,
+            bg_shifter_attrib_lo: 0,
+            bg_shifter_attrib_hi: 0,
+            address_latch: 0,
+            fine_x: 0,
+        }
+    }
+
+    fn increment_scroll_x(&mut self) {
+        if self.registers.mask.show_sprites() || self.registers.mask.show_background() {
+            if self.registers.vram_addr.get_coarse_x() == 31 {
+                self.registers.vram_addr.set_coarse_x(0);
+                self.registers.vram_addr.set_nametable_x(!self.registers.vram_addr.get_nametable_x());
+            } else {
+                self.registers.vram_addr.set_coarse_x(self.registers.vram_addr.get_coarse_x().wrapping_add(1));
+            }
+        }
+    }
+
+    fn increment_scroll_y(&mut self) {
+        if self.registers.mask.show_sprites() || self.registers.mask.show_background() {
+            if self.registers.vram_addr.get_fine_y() < 7 {
+                self.registers.vram_addr.set_fine_y(self.registers.vram_addr.get_fine_y().wrapping_add(1))
+            } else {
+                self.registers.vram_addr.set_fine_y(0);
+
+                if self.registers.vram_addr.get_coarse_y() == 29 {
+                    self.registers.vram_addr.set_coarse_y(0);
+                    self.registers.vram_addr.set_nametable_y(!self.registers.vram_addr.get_nametable_y())
+                } else if self.registers.vram_addr.get_coarse_y() == 31 {
+                    self.registers.vram_addr.set_coarse_y(0);
+                } else {
+                    self.registers.vram_addr.set_coarse_y(self.registers.vram_addr.get_coarse_y());
+                }
+            }
+        }
+    }
+
+    fn transfer_address_x(&mut self) {
+        if self.registers.mask.show_sprites() || self.registers.mask.show_background() {
+            self.registers.vram_addr.set_nametable_x(self.registers.tram_addr.get_nametable_x());
+            self.registers.vram_addr.set_coarse_x(self.registers.tram_addr.get_coarse_x());
+        }
+    }
+
+    fn transfer_address_y(&mut self) {
+        if self.registers.mask.show_sprites() || self.registers.mask.show_background() {
+            self.registers.vram_addr.set_fine_y(self.registers.tram_addr.get_fine_y());
+            self.registers.vram_addr.set_nametable_y(self.registers.tram_addr.get_nametable_y());
+            self.registers.vram_addr.set_coarse_y(self.registers.tram_addr.get_coarse_y());
+        }
+    }
+
+    fn load_background_shifters(&mut self) {
+        self.bg_shifter_pattern_lo = (self.bg_shifter_pattern_lo & 0xFF00) | self.bg_next_tile_lsb as u16;
+        self.bg_shifter_pattern_hi = (self.bg_shifter_pattern_hi & 0xFF00) | self.bg_next_tile_msb as u16;
+
+        self.bg_shifter_attrib_lo = (self.bg_shifter_attrib_lo & 0xFF00);
+        self.bg_shifter_attrib_lo |= if self.bg_next_tile_attrib & 0b01 > 0 {
+            0xFF
+        } else {
+            0x00
+        };
+
+        self.bg_shifter_attrib_hi = (self.bg_shifter_attrib_hi & 0xFF00);
+        self.bg_shifter_attrib_hi |= if self.bg_next_tile_attrib & 0b10 > 0 {
+            0xFF
+        } else {
+            0x00
+        };
+    }
+
+    fn update_shifters(&mut self) {
+        if self.registers.mask.show_background() {
+            self.bg_shifter_pattern_lo <<= 1;
+            self.bg_shifter_pattern_hi <<= 1;
+
+            self.bg_shifter_attrib_lo <<= 1;
+            self.bg_shifter_attrib_hi <<= 1;
         }
     }
 
     pub fn tick(&mut self, cycles: u8) -> bool {
-        self.cycles += cycles as usize;
-        if self.cycles >= 341 {
-            if self.is_sprite_zero_hit(self.cycles) {
-                self.registers.status.set_sprite_zero_hit(true);
-            }
+        let mut frame_complete = false;
 
-            self.cycles -= 341;
-            self.scanline += 1;
+        for _ in 0..cycles {
+            if self.scanline >= -1 && self.scanline < 240 {
+                if self.scanline == 0 && self.cycles == 0 {
+                    // "Odd Frame" cycle skip
+                    self.cycles = 1;
+                }
 
-            if self.scanline == 241 {
-                self.registers.status.set_vblank_status(true);
-                self.registers.status.set_sprite_zero_hit(false);
-                if self.registers.control.generate_vblank_nmi() {
-                    self.nmi_interrupt = Some(1);
-                    return true;
+                if self.scanline == -1 && self.cycles == 1 {
+                    self.registers.status.reset_vblank_status()
+                }
+
+                if (self.cycles >= 2 && self.cycles < 258) || (self.cycles >= 321 && self.cycles < 338) {
+                    self.update_shifters();
+
+                    let cycle_group = (self.cycles - 1) % 8;
+                    match cycle_group {
+                        0 => {
+                            self.load_background_shifters();
+
+                            self.bg_next_tile_id = self.ppu_read(0x2000 | (self.registers.vram_addr.get_bits() & 0x0FFF));
+                        },
+                        2 => {
+                            let mut addr = 0x23C0;
+                            addr |= self.registers.vram_addr.get_nametable_y() << 11;
+                            addr |= self.registers.vram_addr.get_nametable_x() << 10;
+                            addr |= (self.registers.vram_addr.get_coarse_y() >> 2) << 3;
+                            addr |= (self.registers.vram_addr.get_coarse_x() >> 2);
+
+                            self.bg_next_tile_attrib = self.ppu_read(addr);
+
+                            if self.registers.vram_addr.get_coarse_y() & 0x02 > 0 {
+                                self.bg_next_tile_attrib >>= 4;
+                            }
+                            if self.registers.vram_addr.get_coarse_x() & 0x02 > 0 {
+                                self.bg_next_tile_attrib >>= 2;
+                            }
+                            self.bg_next_tile_attrib &= 0x03;
+                        },
+                        4 => {
+                            let mut addr = self.registers.control.background_pattern_table_address();
+                            addr += (self.bg_next_tile_id << 4) as u16;
+                            addr += (self.registers.vram_addr.get_fine_y());
+                            self.bg_next_tile_lsb = self.ppu_read(addr)
+                        },
+                        6 => {
+                            let mut addr = self.registers.control.background_pattern_table_address();
+                            addr += (self.bg_next_tile_id << 4) as u16;
+                            addr += (self.registers.vram_addr.get_fine_y() + 8);
+                            self.bg_next_tile_msb = self.ppu_read(addr)
+                        },
+                        7 => {
+                            self.increment_scroll_x();
+                        },
+                        _ => {},
+                    }
+                }
+
+                if self.cycles == 256 {
+                    self.increment_scroll_y()
+                }
+
+                if self.cycles == 257 {
+                    self.load_background_shifters();
+                    self.transfer_address_x();
+                }
+
+                if self.cycles == 338 || self.cycles == 340 {
+                    self.bg_next_tile_id = self.ppu_read(0x2000 | (self.registers.vram_addr.get_bits() & 0x0FFF));
+                }
+
+                if self.scanline == -1 && self.cycles >= 280 && self.cycles < 305 {
+                    // End of vertical blank period so reset the Y address ready for rendering
+                    self.transfer_address_y();
                 }
             }
 
-            if self.scanline >= 262 {
-                self.scanline = 0;
-                self.nmi_interrupt = None;
-                self.registers.status.set_sprite_zero_hit(false);
-                self.registers.status.reset_vblank_status();
+            if self.scanline == 240 {
+                // Post render scanline - do nothing
+            }
+
+            if self.scanline >= 241 && self.scanline < 261 {
+                if self.scanline == 241 && self.cycles == 1 {
+                    self.registers.status.set_vblank_status(true);
+                    self.registers.status.set_sprite_zero_hit(false);
+                    if self.registers.control.generate_vblank_nmi() {
+                        self.nmi_interrupt = Some(1);
+                        frame_complete = true
+                    }
+                }
+            }
+
+            let mut bg_pixel: u8 = 0x00;
+            let mut bg_palette: u8 = 0x00;
+
+            if self.registers.mask.show_background() {
+                let bit_mux = 0x8000 >> self.fine_x;
+
+                let p0_pixel: u8 = (self.bg_shifter_pattern_lo & bit_mux > 0) as u8;
+                let p1_pixel: u8 = (self.bg_shifter_pattern_hi & bit_mux > 0) as u8;
+
+                bg_pixel = (p1_pixel << 1) | p0_pixel;
+
+                let bg_pal0: u8 = (self.bg_shifter_attrib_lo & bit_mux > 0) as u8;
+                let bg_pal1: u8 = (self.bg_shifter_attrib_hi & bit_mux > 0) as u8;
+
+                bg_palette = (bg_pal1 << 1) | bg_pal0;
+            }
+
+            if self.scanline >= 0 {
+                let rgb = self.get_color_from_palette_ram(bg_pixel, bg_palette);
+                self.set_pixel(self.cycles.wrapping_sub(1), self.scanline as usize, rgb);
+            }
+
+            // Advance renderer
+            self.cycles += 1;
+            if self.cycles >= 341 {
+                self.cycles = 0;
+                self.scanline += 1;
+                if self.scanline >= 261 {
+                    self.scanline = -1;
+                    frame_complete = true
+                }
             }
         }
 
-        false
+        frame_complete
+    }
+
+    fn get_color_from_palette_ram(&mut self, mut pixel: u8, mut palette: u8) -> (u8, u8, u8) {
+        let index = self.ppu_read(0x3F00 + (palette << 2) as u16 + pixel as u16) & 0x3F;
+        SYSTEM_PALLETE[index as usize]
+    }
+
+    fn set_pixel(&mut self, x: usize, y: usize, rgb: (u8, u8, u8)) {
+        if x >= 256 {
+            return
+        }
+
+        if y >= 240 {
+            return
+        }
+
+        self.frame[y * (256 * 3) + (x * 3) + 0] = rgb.0;
+        self.frame[y * (256 * 3) + (x * 3) + 1] = rgb.1;
+        self.frame[y * (256 * 3) + (x * 3) + 2] = rgb.2;
     }
 
     fn is_sprite_zero_hit(&self, cycle: usize) -> bool {
@@ -94,55 +320,27 @@ impl PPU {
     }
 
     fn increment_vram_addr(&mut self) {
-        self.registers
-            .address
-            .increment(self.registers.control.vram_address_increment());
+        let value = self.registers.vram_addr.get_bits() + (self.registers.control.vram_address_increment() as u16);
+        self.registers.vram_addr.set_bits(value)
     }
 
     fn read_data(&mut self) -> u8 {
-        let addr = self.registers.address.get();
+        let addr = self.registers.vram_addr.get_bits();
+
+        let mut result = self.internal_data_buf;
+        self.internal_data_buf = self.ppu_read(addr);
+        if addr >= PALETTE_RAM_START {
+            result = self.internal_data_buf;
+        }
+
         self.increment_vram_addr();
 
-        match addr {
-            PATTERN_TABLE_START..=PATTERN_TABLE_END => {
-                let result = self.internal_data_buf;
-                self.internal_data_buf = self.chr_rom[addr as usize];
-                result
-            }
-            NAMETABLE_START..=NAMETABLE_END => {
-                let result = self.internal_data_buf;
-                self.internal_data_buf = self.vram[self.mirror_vram_addr(addr) as usize];
-                result
-            }
-            NAMETABLE_MIRROR_START..=NAMETABLE_MIRROR_END => panic!(
-                "addr space 0x3000..0x3EFF is not expected to be used, requested = {:04X}",
-                addr
-            ),
-            PALETTE_RAM_START..=PALETTE_RAM_END => {
-                self.palette_table[self.map_palette_table_address_to_index(addr)]
-            }
-            _ => panic!("Unexpected access to mirrored space {:04X}", addr),
-        }
+        result
     }
 
     fn write_to_data(&mut self, value: u8) {
-        let addr = self.registers.address.get();
-
-        match addr {
-            PATTERN_TABLE_START..=PATTERN_TABLE_END => panic!("Write to chr_rom not allowed"),
-            NAMETABLE_START..=NAMETABLE_END => {
-                self.vram[self.mirror_vram_addr(addr) as usize] = value
-            }
-            NAMETABLE_MIRROR_START..=NAMETABLE_MIRROR_END => unimplemented!(
-                "addr space 0x3000..0x3EFF is not expected to be used, requested = {:04X}",
-                addr
-            ),
-            PALETTE_RAM_START..=PALETTE_RAM_END => {
-                self.palette_table[self.map_palette_table_address_to_index(addr)] = value;
-            }
-            _ => panic!("Unexpected access to mirrored space {:04X}", addr),
-        }
-
+        let addr = self.registers.vram_addr.get_bits();
+        self.ppu_write(addr, value);
         self.increment_vram_addr();
     }
 
@@ -171,25 +369,28 @@ impl PPU {
     }
 
     fn write_to_ppu_address(&mut self, value: u8) {
-        self.registers.address.update(value)
+        if self.address_latch == 0 {
+            let value = (((value & 0x03F) as u16) << 8) | (self.registers.tram_addr.get_bits() & 0x00FF);
+            self.registers.tram_addr.set_bits(value);
+            self.address_latch = 1;
+        } else {
+            let value = (self.registers.tram_addr.get_bits() & 0xFF00) | (value as u16);
+            self.registers.tram_addr.set_bits(value);
+            self.registers.vram_addr.set_bits(self.registers.tram_addr.get_bits());
+            self.address_latch = 0;
+        }
     }
 
     fn write_to_control(&mut self, value: u8) {
-        let before_nmi_status = self.registers.control.generate_vblank_nmi();
         self.registers.control.update(value);
-        if !before_nmi_status
-            && self.registers.control.generate_vblank_nmi()
-            && self.registers.status.is_in_vblank()
-        {
-            self.nmi_interrupt = Some(1)
-        }
+        self.registers.tram_addr.set_nametable_x(if self.registers.control.contains(ControlRegister::NAMETABLE1) { 1 } else { 0 });
+        self.registers.tram_addr.set_nametable_y(if self.registers.control.contains(ControlRegister::NAMETABLE2) { 1 } else { 0 });
     }
 
     fn read_status(&mut self) -> u8 {
         let data = self.registers.status.snapshot();
         self.registers.status.reset_vblank_status();
-        self.registers.address.reset_latch();
-        self.registers.scroll.reset_latch();
+        self.address_latch = 0;
         data
     }
 
@@ -212,45 +413,162 @@ impl PPU {
             self.registers.oam_address = self.registers.oam_address.wrapping_add(1);
         }
     }
+
+    fn ppu_read(&mut self, addr: u16) -> u8 {
+        match addr {
+            0x0000..=0x1FFF => {
+                self.chr_rom[addr as usize]
+            },
+            0x2000..=0x3EFF => {
+                let addr = addr & 0x0FFF;
+
+                if self.mirroring == Mirroring::Vertical {
+                    match addr {
+                        0x0000..=0x03FF => self.vram[(addr & 0x03FF) as usize],
+                        0x0400..=0x07FF => self.vram[((addr & 0x03FF) + 0x400) as usize],
+                        0x0800..=0x0BFF => self.vram[(addr & 0x03FF) as usize],
+                        0x0C00..=0x0FFF => self.vram[((addr & 0x03FF) + 0x400) as usize],
+                        _ => panic!("Unknown address"),
+                    }
+                } else if self.mirroring == Mirroring::Horizontal {
+                    match addr {
+                        0x0000..=0x03FF => self.vram[(addr & 0x03FF) as usize],
+                        0x0400..=0x07FF => self.vram[(addr & 0x03FF) as usize],
+                        0x0800..=0x0BFF => self.vram[((addr & 0x03FF) + 0x400) as usize],
+                        0x0C00..=0x0FFF => self.vram[((addr & 0x03FF) + 0x400) as usize],
+                        _ => panic!("Unknown address"),
+                    }
+                } else {
+                    panic!("Unknown mirroring");
+                }
+            }
+            0x3F00..=0x3FFF => {
+                let mut addr = addr & 0x001F;
+                if addr == 0x0010 {
+                    addr = 0x0000;
+                }
+                if addr == 0x0014 {
+                    addr = 0x0004;
+                }
+                if addr == 0x0018 {
+                    addr = 0x0008;
+                }
+                if addr == 0x001C {
+                    addr = 0x000C;
+                }
+
+                let palette_mask = if self.registers.mask.is_grayscale() { 0x30 } else { 0x3F };
+                self.palette_table[addr as usize] & palette_mask
+            }
+            _ => panic!("Unknown address {:04X}", addr),
+        }
+    }
+
+    fn ppu_write(&mut self, addr: u16, value: u8) {
+        let addr = addr & 0x3FFF;
+
+        match addr {
+            0x0000..=0x1FFF => {
+                self.chr_rom[addr as usize] = value
+            },
+            0x2000..=0x3EFF => {
+                let addr = addr & 0x0FFF;
+
+                if self.mirroring == Mirroring::Vertical {
+                    match addr {
+                        0x0000..=0x03FF => self.vram[(addr & 0x03FF) as usize] = value,
+                        0x0400..=0x07FF => self.vram[(addr & 0x03FF + 0x400) as usize] = value,
+                        0x0800..=0x0BFF => self.vram[(addr & 0x03FF) as usize] = value,
+                        0x0C00..=0x0FFF => self.vram[(addr & 0x03FF + 0x400) as usize] = value,
+                        _ => panic!("Unknown address"),
+                    }
+                } else if self.mirroring == Mirroring::Horizontal {
+                    match addr {
+                        0x0000..=0x03FF => self.vram[(addr & 0x03FF) as usize] = value,
+                        0x0400..=0x07FF => self.vram[(addr & 0x03FF) as usize] = value,
+                        0x0800..=0x0BFF => self.vram[(addr & 0x03FF + 0x400) as usize] = value,
+                        0x0C00..=0x0FFF => self.vram[(addr & 0x03FF + 0x400) as usize] = value,
+                        _ => panic!("Unknown address"),
+                    }
+                } else {
+                    panic!("Unknown mirroring");
+                }
+            }
+            0x3F00..=0x3FFF => {
+                let mut addr = addr & 0x001F;
+                if addr == 0x0010 {
+                    addr = 0x0000;
+                }
+                if addr == 0x0014 {
+                    addr = 0x0004;
+                }
+                if addr == 0x0018 {
+                    addr = 0x0008;
+                }
+                if addr == 0x001C {
+                    addr = 0x000C;
+                }
+
+                self.palette_table[addr as usize] = value
+            }
+            _ => panic!("Unknown address {:04X}", addr),
+        }
+    }
 }
 
 impl Mem for PPU {
     fn mem_read(&mut self, addr: u16) -> u8 {
-        let register = PPU_REGISTERS_MAP
-            .get(&addr)
-            .unwrap_or_else(|| panic!("Unexpected addr {:04X}", addr));
+        let register_result = PPU_REGISTERS_MAP
+            .get(&addr);
 
-        if !is_read_allowed(register) {
-            println!("Tried to read from write-only {:#?}", register);
-            return 0;
+        if let Some(register) = register_result {
+            if !is_read_allowed(register) {
+                println!("Tried to read from write-only {:#?}", register);
+                return 0;
+            }
+
+            return match register.field {
+                RegisterField::Status => (self.read_status() & 0xE0) | (self.internal_data_buf & 0x1F),
+                RegisterField::OAMData => self.read_oam_data(),
+                RegisterField::Data => self.read_data(),
+                _ => panic!("Unexpected read on {:#?}", register),
+            }
         }
 
-        match register.field {
-            RegisterField::Status => (self.read_status() & 0xE0) | (self.internal_data_buf & 0x1F),
-            RegisterField::OAMData => self.read_oam_data(),
-            RegisterField::Data => self.read_data(),
-            _ => panic!("Unexpected read on {:#?}", register),
-        }
+        0x00
     }
 
     fn mem_write(&mut self, addr: u16, value: u8) {
-        let register = PPU_REGISTERS_MAP
-            .get(&addr)
-            .unwrap_or_else(|| panic!("Unexpected addr {:04X}", addr));
+        let register_result = PPU_REGISTERS_MAP
+            .get(&addr);
 
-        if !is_write_allowed(register) {
-            panic!("Tried to write to readonly {:#?}", register);
-        }
+        if let Some(register) = register_result {
+            if !is_write_allowed(register) {
+                panic!("Tried to write to readonly {:#?}", register);
+            }
 
-        match register.field {
-            RegisterField::Control => self.write_to_control(value),
-            RegisterField::Mask => self.registers.mask.update(value),
-            RegisterField::OAMAddress => self.write_to_oam_address(value),
-            RegisterField::OAMData => self.write_to_oam_data(value),
-            RegisterField::Scroll => self.registers.scroll.write(value),
-            RegisterField::Address => self.write_to_ppu_address(value),
-            RegisterField::Data => self.write_to_data(value),
-            _ => panic!("Unexpected write on {:#?}", register),
+            match register.field {
+                RegisterField::Control => self.write_to_control(value),
+                RegisterField::Mask => self.registers.mask.update(value),
+                RegisterField::OAMAddress => self.write_to_oam_address(value),
+                RegisterField::OAMData => self.write_to_oam_data(value),
+                RegisterField::Scroll => {
+                    if self.address_latch == 0 {
+                        self.fine_x = value & 0x07;
+                        self.registers.tram_addr.set_coarse_x((value >> 3) as u16);
+                        self.address_latch = 1;
+                    } else {
+                        self.registers.tram_addr.set_fine_y((value & 0x07) as u16);
+                        self.registers.tram_addr.set_coarse_y((value >> 3) as u16);
+                        self.address_latch = 0;
+                    }
+                },
+                RegisterField::Address => self.write_to_ppu_address(value),
+                RegisterField::Data => self.write_to_data(value),
+                _ => panic!("Unexpected write on {:#?}", register),
+            }
+
+            return
         }
     }
 }

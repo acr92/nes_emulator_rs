@@ -6,7 +6,7 @@ use core::cartridge::Mirroring;
 use core::ppu::{NAMETABLE_0, NAMETABLE_1, NAMETABLE_2, NAMETABLE_3};
 use ppu::PPU;
 
-mod debug;
+pub mod debug;
 pub mod frame;
 mod oam;
 mod palette;
@@ -27,8 +27,8 @@ require more accuracy in PPU emulation, however.
 const SPRITE_COLOR_INDEX_TRANSPARENT: u8 = 0;
 
 pub fn render(ppu: &PPU, frame: &mut Frame) {
-    let scroll_x = (ppu.registers.scroll.scroll_x) as usize;
-    let scroll_y = (ppu.registers.scroll.scroll_y) as usize;
+    let scroll_x = 0xFF as usize; // TODO: this is obviously not correct, but we ignore this for now.
+    let scroll_y = 0xFF as usize;
 
     let nametable_address = ppu.registers.control.nametable_address();
     let (main_nametable, second_nametable) = match (&ppu.mirroring, nametable_address) {

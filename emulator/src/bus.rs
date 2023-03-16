@@ -96,8 +96,11 @@ impl Bus<'static> for NESBus<'static> {
     fn tick(&mut self, cycles: u8) {
         self.cycles += cycles as usize;
 
+        let nmi_before = self.ppu.nmi_interrupt.is_some();
         let new_frame = self.ppu.tick(cycles * 3);
-        if new_frame {
+        let nmi_after = self.ppu.nmi_interrupt.is_some();
+
+        if !nmi_before && nmi_after {
             (self.gameloop_callback)(&self.ppu, &mut self.joypad1);
         }
     }

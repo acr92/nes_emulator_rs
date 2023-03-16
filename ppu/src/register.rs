@@ -5,6 +5,7 @@ use crate::registers::scroll::ScrollRegister;
 use crate::registers::status::StatusRegister;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
+use crate::registers::loopy::LoopyRegister;
 
 lazy_static! {
     pub(crate) static ref PPU_REGISTERS: Vec<Register> = vec![
@@ -77,8 +78,9 @@ pub struct Registers {
     pub mask: MaskRegister,
     pub status: StatusRegister,
     pub oam_address: u8,
-    pub scroll: ScrollRegister,
-    pub address: AddressRegister,
+
+    pub vram_addr: LoopyRegister,
+    pub tram_addr: LoopyRegister,
 }
 
 impl Registers {
@@ -88,8 +90,9 @@ impl Registers {
             mask: MaskRegister::new(),
             status: StatusRegister::new(),
             oam_address: 0,
-            scroll: ScrollRegister::new(),
-            address: AddressRegister::new(),
+
+            vram_addr: LoopyRegister::new(),
+            tram_addr: LoopyRegister::new(),
         }
     }
 }
