@@ -40,13 +40,12 @@ fn main() {
     let (tx_frame, rx_frame): (Sender<Vec<Frame>>, Receiver<Vec<Frame>>) = mpsc::channel();
     let (tx_joycon, rx_joycon): (Sender<Vec<InputEvent>>, Receiver<Vec<InputEvent>>) =
         mpsc::channel();
-    let (tx_debug, rx_debug): (Sender<Vec<String>>, Receiver<Vec<String>>) = mpsc::channel();
 
     let bank = Arc::new(RwLock::new(0 as usize));
     let bank_for_render = bank.clone();
 
     let render_thread =
-        thread::spawn(move || create_render_thread(rx_frame, tx_joycon, rx_debug, bank_for_render));
+        thread::spawn(move || create_render_thread(rx_frame, tx_joycon, bank_for_render));
 
     let ppu = PPU::new(rom.chr_rom.clone(), rom.screen_mirroring);
     let mut bus = NESBus::new_with_callback(
@@ -72,20 +71,6 @@ fn main() {
                 .send(vec![game_frame, nt1_frame, nt2_frame, chr_frame])
                 .expect("Should send frames");
 
-            let mut debug_oam: Vec<String> = vec![];
-            for i in 0..26 {
-                debug_oam.push(format!(
-                    "{}: ({}, {}) ID: {:02X} AT: {:02X}",
-                    i,
-                    ppu.oam_data[i * 4 + 3],
-                    ppu.oam_data[i * 4 + 0],
-                    ppu.oam_data[i * 4 + 1],
-                    ppu.oam_data[i * 4 + 2]
-                ));
-            }
-
-            tx_debug.send(debug_oam).unwrap();
-
             for key_event in rx_joycon.recv().expect("Should receive joycon state") {
                 update_joypad_state(joypad, key_event);
             }
@@ -105,13 +90,11 @@ fn main() {
 fn create_render_thread(
     rx_frame: Receiver<Vec<Frame>>,
     tx_joycon: Sender<Vec<InputEvent>>,
-    rx_debug: Receiver<Vec<String>>,
     bank: Arc<RwLock<usize>>,
 ) -> ! {
     println!("Started render thread");
 
     let sdl_context = sdl2::init().unwrap();
-    let ttf_context = sdl2::ttf::init().unwrap();
 
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem
@@ -163,16 +146,6 @@ fn create_render_thread(
         )
         .unwrap();
 
-    let mut font = ttf_context.load_font("09809_COURIER.ttf", 42).unwrap();
-
-    let mut debug_text = creator
-        .create_texture_target(
-            PixelFormatEnum::RGB24,
-            (Frame::WIDTH * WINDOW_SCALE as usize) as u32,
-            (Frame::HEIGHT * WINDOW_SCALE as usize) as u32,
-        )
-        .unwrap();
-
     loop {
         let mut frames = rx_frame.recv().unwrap();
 
@@ -195,46 +168,6 @@ fn create_render_thread(
             .update(None, &chr_rom_frame.data, Frame::WIDTH * Frame::RGB_SIZE)
             .unwrap();
 
-        let debug_strings = rx_debug.recv().unwrap();
-
-        canvas
-            .with_texture_canvas(&mut debug_text, |c| {
-                c.clear();
-
-                let lines = vec![String::from("DEBUG:")];
-                for (index, line) in lines.iter().chain(debug_strings.iter()).enumerate() {
-                    let color = if index == 0 {
-                        Color::RGBA(255, 0, 0, 255)
-                    } else {
-                        Color::RGBA(255, 255, 255, 255)
-                    };
-
-                    let surface = font.render(line).blended(color).unwrap();
-
-                    let texture_creator = c.texture_creator();
-                    let texture = texture_creator
-                        .create_texture_from_surface(surface)
-                        .unwrap();
-
-                    let TextureQuery { width, height, .. } = texture.query();
-
-                    c.copy(
-                        &texture,
-                        None,
-                        Some(Rect::new(
-                            16,
-                            16 + ((height as f32) * (index as f32) * 1.5) as i32,
-                            width as u32,
-                            height as u32,
-                        )),
-                    )
-                    .unwrap();
-                }
-
-                ()
-            })
-            .unwrap();
-
         canvas
             .copy(
                 &game_texture,
@@ -244,7 +177,7 @@ fn create_render_thread(
             .unwrap();
         canvas
             .copy(
-                &debug_text,
+                &chr_rom_texture,
                 None,
                 Some(Rect::new(
                     Frame::WIDTH as i32,
@@ -268,7 +201,7 @@ fn create_render_thread(
             .unwrap();
         canvas
             .copy(
-                &chr_rom_texture,
+                &nt2_texture,
                 None,
                 Some(Rect::new(
                     Frame::WIDTH as i32,
