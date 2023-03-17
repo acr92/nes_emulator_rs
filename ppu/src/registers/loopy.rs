@@ -1,11 +1,11 @@
 #[repr(C)]
 pub struct LoopyRegister {
-    coarse_x: u16,      // 5 bits
-    coarse_y: u16,      // 5 bits
-    nametable_x: u16,   // 1 bit
-    nametable_y: u16,   // 1 bit
-    fine_y: u16,        // 3 bits
-    unused: u16,        // 1 bit
+    coarse_x: u16,    // 5 bits
+    coarse_y: u16,    // 5 bits
+    nametable_x: u16, // 1 bit
+    nametable_y: u16, // 1 bit
+    fine_y: u16,      // 3 bits
+    unused: u16,      // 1 bit
 }
 
 impl LoopyRegister {
@@ -51,9 +51,7 @@ impl LoopyRegister {
     }
 
     pub fn get_coarse_y(&self) -> u16 {
-        unsafe {
-            self.coarse_y
-        }
+        unsafe { self.coarse_y }
     }
 
     pub fn set_nametable_x(&mut self, value: u16) {
@@ -61,9 +59,7 @@ impl LoopyRegister {
     }
 
     pub fn get_nametable_x(&self) -> u16 {
-        unsafe {
-            self.nametable_x
-        }
+        unsafe { self.nametable_x }
     }
 
     pub fn set_nametable_y(&mut self, value: u16) {
@@ -71,9 +67,7 @@ impl LoopyRegister {
     }
 
     pub fn get_nametable_y(&self) -> u16 {
-        unsafe {
-            self.nametable_y
-        }
+        unsafe { self.nametable_y }
     }
 
     pub fn set_fine_y(&mut self, value: u16) {
@@ -81,9 +75,7 @@ impl LoopyRegister {
     }
 
     pub fn get_fine_y(&self) -> u16 {
-        unsafe {
-            self.fine_y
-        }
+        unsafe { self.fine_y }
     }
 
     pub fn set_unused(&mut self, value: u16) {
@@ -91,12 +83,9 @@ impl LoopyRegister {
     }
 
     pub fn get_unused(&self) -> u16 {
-        unsafe {
-            self.unused
-        }
+        unsafe { self.unused }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

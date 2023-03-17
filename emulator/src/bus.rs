@@ -159,6 +159,8 @@ impl Mem for NESBus<'_> {
                     *item = self.mem_read(hi + (i as u16));
                 }
 
+                // TODO: if this were to be completely accurate then we need to flip the tick() to bus
+                //       and wait
                 self.ppu.write_oam_dma(&buffer);
             }
             PPU_REGISTERS_MIRRORS_START..=PPU_REGISTERS_MIRRORS_END => {

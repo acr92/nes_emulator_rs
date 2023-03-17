@@ -1,11 +1,11 @@
 use crate::registers::address::AddressRegister;
 use crate::registers::control::ControlRegister;
+use crate::registers::loopy::LoopyRegister;
 use crate::registers::mask::MaskRegister;
 use crate::registers::scroll::ScrollRegister;
 use crate::registers::status::StatusRegister;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
-use crate::registers::loopy::LoopyRegister;
 
 lazy_static! {
     pub(crate) static ref PPU_REGISTERS: Vec<Register> = vec![

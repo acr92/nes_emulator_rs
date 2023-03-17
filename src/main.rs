@@ -5,24 +5,26 @@ use cpu6502::cpu::CPU;
 use emulator::bus::NESBus;
 use emulator::cartridge::Rom;
 use emulator::joypad::Joypad;
+use ppu::oam::Oam;
 use ppu::PPU;
 use render::frame::Frame;
 use render::rectangle::Rectangle;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use sdl2::pixels::PixelFormatEnum;
-use sdl2::rect::Rect;
+use sdl2::pixels::{Color, PixelFormatEnum};
+use sdl2::rect::{Point, Rect};
+use sdl2::render::TextureQuery;
 use sdl2::surface::Surface;
 use sdl2::EventPump;
 use std::collections::HashMap;
+use std::fmt::format;
 use std::path::Path;
-use std::sync::{Arc, mpsc, RwLock};
-use std::sync::mpsc::{Receiver, Sender};
-use std::{env, thread};
 use std::rc::Rc;
+use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{mpsc, Arc, RwLock};
+use std::{env, thread};
 
 const WINDOW_SCALE: f32 = 3.0;
-
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -38,11 +40,13 @@ fn main() {
     let (tx_frame, rx_frame): (Sender<Vec<Frame>>, Receiver<Vec<Frame>>) = mpsc::channel();
     let (tx_joycon, rx_joycon): (Sender<Vec<InputEvent>>, Receiver<Vec<InputEvent>>) =
         mpsc::channel();
+    let (tx_debug, rx_debug): (Sender<Vec<String>>, Receiver<Vec<String>>) = mpsc::channel();
 
     let bank = Arc::new(RwLock::new(0 as usize));
     let bank_for_render = bank.clone();
 
-    let render_thread = thread::spawn(move || create_render_thread(rx_frame, tx_joycon, bank_for_render));
+    let render_thread =
+        thread::spawn(move || create_render_thread(rx_frame, tx_joycon, rx_debug, bank_for_render));
 
     let ppu = PPU::new(rom.chr_rom.clone(), rom.screen_mirroring);
     let mut bus = NESBus::new_with_callback(
@@ -68,6 +72,20 @@ fn main() {
                 .send(vec![game_frame, nt1_frame, nt2_frame, chr_frame])
                 .expect("Should send frames");
 
+            let mut debug_oam: Vec<String> = vec![];
+            for i in 0..26 {
+                debug_oam.push(format!(
+                    "{}: ({}, {}) ID: {:02X} AT: {:02X}",
+                    i,
+                    ppu.oam_data[i * 4 + 3],
+                    ppu.oam_data[i * 4 + 0],
+                    ppu.oam_data[i * 4 + 1],
+                    ppu.oam_data[i * 4 + 2]
+                ));
+            }
+
+            tx_debug.send(debug_oam).unwrap();
+
             for key_event in rx_joycon.recv().expect("Should receive joycon state") {
                 update_joypad_state(joypad, key_event);
             }
@@ -84,10 +102,17 @@ fn main() {
         .expect("Should be able to attach to the render thread");
 }
 
-fn create_render_thread(rx_frame: Receiver<Vec<Frame>>, tx_joycon: Sender<Vec<InputEvent>>, bank: Arc<RwLock<usize>>) -> ! {
+fn create_render_thread(
+    rx_frame: Receiver<Vec<Frame>>,
+    tx_joycon: Sender<Vec<InputEvent>>,
+    rx_debug: Receiver<Vec<String>>,
+    bank: Arc<RwLock<usize>>,
+) -> ! {
     println!("Started render thread");
 
     let sdl_context = sdl2::init().unwrap();
+    let ttf_context = sdl2::ttf::init().unwrap();
+
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem
         .window(
@@ -101,7 +126,7 @@ fn create_render_thread(rx_frame: Receiver<Vec<Frame>>, tx_joycon: Sender<Vec<In
 
     let key_map = create_keymap();
 
-    let mut canvas = window.into_canvas().build().unwrap();
+    let mut canvas = window.into_canvas().present_vsync().build().unwrap();
     let mut event_pump = sdl_context.event_pump().unwrap();
     canvas.set_scale(WINDOW_SCALE, WINDOW_SCALE).unwrap();
 
@@ -138,6 +163,16 @@ fn create_render_thread(rx_frame: Receiver<Vec<Frame>>, tx_joycon: Sender<Vec<In
         )
         .unwrap();
 
+    let mut font = ttf_context.load_font("09809_COURIER.ttf", 42).unwrap();
+
+    let mut debug_text = creator
+        .create_texture_target(
+            PixelFormatEnum::RGB24,
+            (Frame::WIDTH * WINDOW_SCALE as usize) as u32,
+            (Frame::HEIGHT * WINDOW_SCALE as usize) as u32,
+        )
+        .unwrap();
+
     loop {
         let mut frames = rx_frame.recv().unwrap();
 
@@ -156,7 +191,48 @@ fn create_render_thread(rx_frame: Receiver<Vec<Frame>>, tx_joycon: Sender<Vec<In
         nt2_texture
             .update(None, &nt2_frame.data, Frame::WIDTH * Frame::RGB_SIZE)
             .unwrap();
-        chr_rom_texture.update(None, &chr_rom_frame.data, Frame::WIDTH * Frame::RGB_SIZE)
+        chr_rom_texture
+            .update(None, &chr_rom_frame.data, Frame::WIDTH * Frame::RGB_SIZE)
+            .unwrap();
+
+        let debug_strings = rx_debug.recv().unwrap();
+
+        canvas
+            .with_texture_canvas(&mut debug_text, |c| {
+                c.clear();
+
+                let lines = vec![String::from("DEBUG:")];
+                for (index, line) in lines.iter().chain(debug_strings.iter()).enumerate() {
+                    let color = if index == 0 {
+                        Color::RGBA(255, 0, 0, 255)
+                    } else {
+                        Color::RGBA(255, 255, 255, 255)
+                    };
+
+                    let surface = font.render(line).blended(color).unwrap();
+
+                    let texture_creator = c.texture_creator();
+                    let texture = texture_creator
+                        .create_texture_from_surface(surface)
+                        .unwrap();
+
+                    let TextureQuery { width, height, .. } = texture.query();
+
+                    c.copy(
+                        &texture,
+                        None,
+                        Some(Rect::new(
+                            16,
+                            16 + ((height as f32) * (index as f32) * 1.5) as i32,
+                            width as u32,
+                            height as u32,
+                        )),
+                    )
+                    .unwrap();
+                }
+
+                ()
+            })
             .unwrap();
 
         canvas
@@ -168,9 +244,14 @@ fn create_render_thread(rx_frame: Receiver<Vec<Frame>>, tx_joycon: Sender<Vec<In
             .unwrap();
         canvas
             .copy(
-                &chr_rom_texture,
+                &debug_text,
                 None,
-                Some(Rect::new(Frame::WIDTH as i32, 0, Frame::WIDTH as u32, Frame::HEIGHT as u32)),
+                Some(Rect::new(
+                    Frame::WIDTH as i32,
+                    0,
+                    Frame::WIDTH as u32,
+                    Frame::HEIGHT as u32,
+                )),
             )
             .unwrap();
         canvas
@@ -187,7 +268,7 @@ fn create_render_thread(rx_frame: Receiver<Vec<Frame>>, tx_joycon: Sender<Vec<In
             .unwrap();
         canvas
             .copy(
-                &nt2_texture,
+                &chr_rom_texture,
                 None,
                 Some(Rect::new(
                     Frame::WIDTH as i32,

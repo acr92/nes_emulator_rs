@@ -1,15 +1,18 @@
+use crate::oam::Oam;
+use crate::palette::SYSTEM_PALLETE;
 use crate::register::{
     is_read_allowed, is_write_allowed, RegisterField, Registers, PPU_REGISTERS_MAP,
 };
-use core::cartridge::Mirroring;
-use core::mem::Mem;
-use crate::palette::SYSTEM_PALLETE;
 use crate::registers::control::ControlRegister;
 use crate::registers::mask::MaskRegister;
+use crate::registers::status::StatusRegister;
+use core::cartridge::Mirroring;
+use core::mem::Mem;
 
+pub mod oam;
+mod palette;
 mod register;
 mod registers;
-mod palette;
 
 const PATTERN_TABLE_START: u16 = 0x0000;
 const PATTERN_TABLE_END: u16 = 0x1FFF;
@@ -52,6 +55,13 @@ pub struct PPU {
     bg_shifter_attrib_hi: u16,
     address_latch: u8,
     fine_x: u8,
+
+    sprite_scanline: Vec<Oam>,
+    sprite_shifter_pattern_lo: [u8; 8],
+    sprite_shifter_pattern_hi: [u8; 8],
+
+    sprite_zero_hit_possible: bool,
+    sprite_zero_being_rendered: bool,
 }
 
 impl PPU {
@@ -86,6 +96,12 @@ impl PPU {
             bg_shifter_attrib_hi: 0,
             address_latch: 0,
             fine_x: 0,
+
+            sprite_scanline: vec![],
+            sprite_shifter_pattern_lo: [0; 8],
+            sprite_shifter_pattern_hi: [0; 8],
+            sprite_zero_hit_possible: false,
+            sprite_zero_being_rendered: false,
         }
     }
 
@@ -93,9 +109,13 @@ impl PPU {
         if self.registers.mask.show_sprites() || self.registers.mask.show_background() {
             if self.registers.vram_addr.get_coarse_x() == 31 {
                 self.registers.vram_addr.set_coarse_x(0);
-                self.registers.vram_addr.set_nametable_x(!self.registers.vram_addr.get_nametable_x());
+                self.registers
+                    .vram_addr
+                    .set_nametable_x(!self.registers.vram_addr.get_nametable_x());
             } else {
-                self.registers.vram_addr.set_coarse_x(self.registers.vram_addr.get_coarse_x().wrapping_add(1));
+                self.registers
+                    .vram_addr
+                    .set_coarse_x(self.registers.vram_addr.get_coarse_x().wrapping_add(1));
             }
         }
     }
@@ -103,17 +123,23 @@ impl PPU {
     fn increment_scroll_y(&mut self) {
         if self.registers.mask.show_sprites() || self.registers.mask.show_background() {
             if self.registers.vram_addr.get_fine_y() < 7 {
-                self.registers.vram_addr.set_fine_y(self.registers.vram_addr.get_fine_y().wrapping_add(1))
+                self.registers
+                    .vram_addr
+                    .set_fine_y(self.registers.vram_addr.get_fine_y().wrapping_add(1))
             } else {
                 self.registers.vram_addr.set_fine_y(0);
 
                 if self.registers.vram_addr.get_coarse_y() == 29 {
                     self.registers.vram_addr.set_coarse_y(0);
-                    self.registers.vram_addr.set_nametable_y(!self.registers.vram_addr.get_nametable_y())
+                    self.registers
+                        .vram_addr
+                        .set_nametable_y(!self.registers.vram_addr.get_nametable_y())
                 } else if self.registers.vram_addr.get_coarse_y() == 31 {
                     self.registers.vram_addr.set_coarse_y(0);
                 } else {
-                    self.registers.vram_addr.set_coarse_y(self.registers.vram_addr.get_coarse_y().wrapping_add(1));
+                    self.registers
+                        .vram_addr
+                        .set_coarse_y(self.registers.vram_addr.get_coarse_y().wrapping_add(1));
                 }
             }
         }
@@ -121,22 +147,34 @@ impl PPU {
 
     fn transfer_address_x(&mut self) {
         if self.registers.mask.show_sprites() || self.registers.mask.show_background() {
-            self.registers.vram_addr.set_nametable_x(self.registers.tram_addr.get_nametable_x());
-            self.registers.vram_addr.set_coarse_x(self.registers.tram_addr.get_coarse_x());
+            self.registers
+                .vram_addr
+                .set_nametable_x(self.registers.tram_addr.get_nametable_x());
+            self.registers
+                .vram_addr
+                .set_coarse_x(self.registers.tram_addr.get_coarse_x());
         }
     }
 
     fn transfer_address_y(&mut self) {
         if self.registers.mask.show_sprites() || self.registers.mask.show_background() {
-            self.registers.vram_addr.set_fine_y(self.registers.tram_addr.get_fine_y());
-            self.registers.vram_addr.set_nametable_y(self.registers.tram_addr.get_nametable_y());
-            self.registers.vram_addr.set_coarse_y(self.registers.tram_addr.get_coarse_y());
+            self.registers
+                .vram_addr
+                .set_fine_y(self.registers.tram_addr.get_fine_y());
+            self.registers
+                .vram_addr
+                .set_nametable_y(self.registers.tram_addr.get_nametable_y());
+            self.registers
+                .vram_addr
+                .set_coarse_y(self.registers.tram_addr.get_coarse_y());
         }
     }
 
     fn load_background_shifters(&mut self) {
-        self.bg_shifter_pattern_lo = (self.bg_shifter_pattern_lo & 0xFF00) | self.bg_next_tile_lsb as u16;
-        self.bg_shifter_pattern_hi = (self.bg_shifter_pattern_hi & 0xFF00) | self.bg_next_tile_msb as u16;
+        self.bg_shifter_pattern_lo =
+            (self.bg_shifter_pattern_lo & 0xFF00) | self.bg_next_tile_lsb as u16;
+        self.bg_shifter_pattern_hi =
+            (self.bg_shifter_pattern_hi & 0xFF00) | self.bg_next_tile_msb as u16;
 
         self.bg_shifter_attrib_lo = (self.bg_shifter_attrib_lo & 0xFF00);
         self.bg_shifter_attrib_lo |= if self.bg_next_tile_attrib & 0b01 > 0 {
@@ -161,6 +199,17 @@ impl PPU {
             self.bg_shifter_attrib_lo <<= 1;
             self.bg_shifter_attrib_hi <<= 1;
         }
+
+        if self.registers.mask.show_sprites() && self.cycles >= 1 && self.cycles < 258 {
+            for (index, mut oam) in self.sprite_scanline.iter_mut().enumerate() {
+                if oam.tile_x > 0 {
+                    oam.tile_x -= 1;
+                } else {
+                    self.sprite_shifter_pattern_lo[index] <<= 1;
+                    self.sprite_shifter_pattern_hi[index] <<= 1;
+                }
+            }
+        }
     }
 
     pub fn tick(&mut self, cycles: u8) -> bool {
@@ -175,9 +224,17 @@ impl PPU {
 
                 if self.scanline == -1 && self.cycles == 1 {
                     self.registers.status.reset_vblank_status();
+                    self.registers.status.set_sprite_overflow(false);
+                    self.registers.status.set_sprite_zero_hit(false);
+
+                    // clear shifters
+                    self.sprite_shifter_pattern_lo = [0; 8];
+                    self.sprite_shifter_pattern_hi = [0; 8];
                 }
 
-                if (self.cycles >= 2 && self.cycles < 258) || (self.cycles >= 321 && self.cycles < 338) {
+                if (self.cycles >= 2 && self.cycles < 258)
+                    || (self.cycles >= 321 && self.cycles < 338)
+                {
                     self.update_shifters();
 
                     let cycle_group = (self.cycles - 1) % 8;
@@ -185,8 +242,9 @@ impl PPU {
                         0 => {
                             self.load_background_shifters();
 
-                            self.bg_next_tile_id = self.ppu_read(0x2000 | (self.registers.vram_addr.get_bits() & 0x0FFF));
-                        },
+                            self.bg_next_tile_id = self
+                                .ppu_read(0x2000 | (self.registers.vram_addr.get_bits() & 0x0FFF));
+                        }
                         2 => {
                             let mut addr = 0x23C0;
                             addr |= self.registers.vram_addr.get_nametable_y() << 11;
@@ -203,19 +261,28 @@ impl PPU {
                                 self.bg_next_tile_attrib >>= 2;
                             }
                             self.bg_next_tile_attrib &= 0x03;
-                        },
+                        }
                         4 => {
-                            let mut addr = ((if self.registers.control.contains(ControlRegister::BACKGROUND_PATTERN_ADDR) {
+                            let mut addr = ((if self
+                                .registers
+                                .control
+                                .contains(ControlRegister::BACKGROUND_PATTERN_ADDR)
+                            {
                                 1
                             } else {
                                 0
-                            }) as u16) << 12;
+                            }) as u16)
+                                << 12;
                             addr += ((self.bg_next_tile_id as u16) << 4) as u16;
                             addr += (self.registers.vram_addr.get_fine_y());
                             self.bg_next_tile_lsb = self.ppu_read(addr);
-                        },
+                        }
                         6 => {
-                            let mut addr = if self.registers.control.contains(ControlRegister::BACKGROUND_PATTERN_ADDR) {
+                            let mut addr = if self
+                                .registers
+                                .control
+                                .contains(ControlRegister::BACKGROUND_PATTERN_ADDR)
+                            {
                                 1
                             } else {
                                 0
@@ -223,11 +290,11 @@ impl PPU {
                             addr += ((self.bg_next_tile_id as u16) << 4) as u16;
                             addr += (self.registers.vram_addr.get_fine_y() + 8);
                             self.bg_next_tile_msb = self.ppu_read(addr);
-                        },
+                        }
                         7 => {
                             self.increment_scroll_x();
-                        },
-                        _ => {},
+                        }
+                        _ => {}
                     }
                 }
 
@@ -241,12 +308,102 @@ impl PPU {
                 }
 
                 if self.cycles == 338 || self.cycles == 340 {
-                    self.bg_next_tile_id = self.ppu_read(0x2000 | (self.registers.vram_addr.get_bits() & 0x0FFF));
+                    self.bg_next_tile_id =
+                        self.ppu_read(0x2000 | (self.registers.vram_addr.get_bits() & 0x0FFF));
                 }
 
                 if self.scanline == -1 && self.cycles >= 280 && self.cycles < 305 {
                     // End of vertical blank period so reset the Y address ready for rendering
                     self.transfer_address_y();
+                }
+
+                if self.cycles == 257 && self.scanline >= 0 {
+                    self.sprite_scanline = vec![];
+
+                    let mut sprite_count = 0;
+                    for oam in Oam::oam_iter(&self.oam_data) {
+                        if sprite_count >= 9 {
+                            break;
+                        }
+
+                        let diff = self.scanline - (oam.tile_y as i16);
+
+                        if diff >= 0 && diff < self.registers.control.sprite_size() as i16 {
+                            if self.sprite_scanline.len() < 8 {
+                                self.sprite_scanline.push(oam.clone());
+                            }
+                        }
+                    }
+
+                    self.registers.status.set_sprite_overflow(sprite_count > 8);
+                }
+
+                if self.cycles == 340 {
+                    for (index, oam) in self.sprite_scanline.iter().enumerate() {
+                        // god what a mess..........
+                        let addr_lo = if !self
+                            .registers
+                            .control
+                            .contains(ControlRegister::SPRITE_SIZE)
+                        {
+                            // 8x8 mode
+                            if !oam.flip_vertical() {
+                                // normal
+                                self.registers.control.sprite_pattern_table_address()
+                                    | (oam.tile_index << 4) // which cell
+                                    | (self.scanline as u16 - oam.tile_y as u16)
+                            /* which row in cell */
+                            } else {
+                                // flipped vertically
+                                self.registers.control.sprite_pattern_table_address()
+                                    | (oam.tile_index << 4)
+                                    | (7 - self.scanline as u16 - oam.tile_y as u16)
+                            }
+                        } else {
+                            // 8x16 mode
+                            if !oam.flip_vertical() {
+                                if self.scanline as usize - oam.tile_y < 8 {
+                                    self.registers.control.sprite_pattern_table_address()
+                                        | (oam.tile_index << 4)
+                                        | ((self.scanline as u16 - oam.tile_y as u16) & 0x07)
+                                } else {
+                                    self.registers.control.sprite_pattern_table_address()
+                                        | (((oam.tile_index & 0xFE) + 1) << 4)
+                                        | ((self.scanline as u16 - oam.tile_y as u16) & 0x07)
+                                }
+                            } else {
+                                if self.scanline as usize - oam.tile_y < 8 {
+                                    self.registers.control.sprite_pattern_table_address()
+                                        | (((oam.tile_index & 0xFE) + 1) << 4)
+                                        | (7 - (self.scanline as u16 - oam.tile_y as u16) & 0x07)
+                                } else {
+                                    self.registers.control.sprite_pattern_table_address()
+                                        | (oam.tile_index << 4)
+                                        | (7 - (self.scanline as u16 - oam.tile_y as u16) & 0x07)
+                                }
+                            }
+                        };
+
+                        let addr_hi = addr_lo + 8;
+
+                        let mut bits_lo = self.ppu_read(addr_lo);
+                        let mut bits_hi = self.ppu_read(addr_hi);
+
+                        if oam.flip_horizontal() {
+                            fn flipbyte(input: u8) -> u8 {
+                                let mut b = (input & 0xF0) >> 4 | (input & 0x0F) << 4;
+                                b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
+                                b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
+                                b
+                            }
+
+                            bits_lo = flipbyte(bits_lo);
+                            bits_hi = flipbyte(bits_hi);
+                        }
+
+                        self.sprite_shifter_pattern_lo[index] = bits_lo;
+                        self.sprite_shifter_pattern_hi[index] = bits_hi;
+                    }
                 }
             }
 
@@ -257,7 +414,7 @@ impl PPU {
             if self.scanline >= 241 && self.scanline < 261 {
                 if self.scanline == 241 && self.cycles == 1 {
                     self.registers.status.set_vblank_status(true);
-                    self.registers.status.set_sprite_zero_hit(false);
+
                     if self.registers.control.generate_vblank_nmi() {
                         self.nmi_interrupt = Some(1);
                         frame_complete = true
@@ -282,7 +439,43 @@ impl PPU {
                 bg_palette = (bg_pal1 << 1) | bg_pal0;
             }
 
-            let rgb = self.get_color_from_palette_ram(bg_pixel, bg_palette);
+            let mut fg_pixel = 0u8;
+            let mut fg_palette = 0u8;
+            let mut fg_priority = false;
+
+            if self.registers.mask.show_sprites() {
+                for (index, oam) in self.sprite_scanline.iter().enumerate() {
+                    if oam.tile_x == 0 {
+                        let fg_pixel_lo = self.sprite_shifter_pattern_lo[index] & 0x80 >> 7;
+                        let fg_pixel_hi = self.sprite_shifter_pattern_hi[index] & 0x80 >> 7;
+                        fg_pixel = (fg_pixel_hi << 1) | fg_pixel_lo;
+
+                        fg_palette = oam.palette_index() + 0x04;
+                        fg_priority = oam.priority_in_front_of_background();
+
+                        // non transparent pixel
+                        if fg_pixel != 0 {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            let (pixel, palette) = if bg_pixel == 0 && fg_pixel == 0 {
+                (0x00, 0x00)
+            } else if bg_pixel == 0 && fg_pixel > 0 {
+                (fg_pixel, fg_palette)
+            } else if bg_pixel > 0 && fg_pixel == 0 {
+                (bg_pixel, bg_palette)
+            } else {
+                if fg_priority {
+                    (fg_pixel, fg_palette)
+                } else {
+                    (bg_pixel, bg_palette)
+                }
+            };
+
+            let rgb = self.get_color_from_palette_ram(pixel, palette);
             self.set_pixel(self.cycles.wrapping_sub(1), self.scanline as usize, rgb);
 
             // Advance renderer
@@ -308,11 +501,11 @@ impl PPU {
 
     fn set_pixel(&mut self, x: usize, y: usize, rgb: (u8, u8, u8)) {
         if x >= 256 {
-            return
+            return;
         }
 
         if y >= 240 {
-            return
+            return;
         }
 
         self.frame[y * (256 * 3) + (x * 3) + 0] = rgb.0;
@@ -327,7 +520,8 @@ impl PPU {
     }
 
     fn increment_vram_addr(&mut self) {
-        let value = self.registers.vram_addr.get_bits() + (self.registers.control.vram_address_increment() as u16);
+        let value = self.registers.vram_addr.get_bits()
+            + (self.registers.control.vram_address_increment() as u16);
         self.registers.vram_addr.set_bits(value)
     }
 
@@ -376,19 +570,37 @@ impl PPU {
 
     fn write_to_ppu_address(&mut self, value: u8) {
         if self.address_latch == 0 {
-            self.registers.tram_addr.set_bits((((value & 0x03F) as u16) << 8) | (self.registers.tram_addr.get_bits() & 0x00FF));
+            self.registers.tram_addr.set_bits(
+                (((value & 0x03F) as u16) << 8) | (self.registers.tram_addr.get_bits() & 0x00FF),
+            );
             self.address_latch = 1;
         } else {
-            self.registers.tram_addr.set_bits((self.registers.tram_addr.get_bits() & 0xFF00) | (value as u16));
-            self.registers.vram_addr.set_bits(self.registers.tram_addr.get_bits());
+            self.registers
+                .tram_addr
+                .set_bits((self.registers.tram_addr.get_bits() & 0xFF00) | (value as u16));
+            self.registers
+                .vram_addr
+                .set_bits(self.registers.tram_addr.get_bits());
             self.address_latch = 0;
         }
     }
 
     fn write_to_control(&mut self, value: u8) {
         self.registers.control.update(value);
-        self.registers.tram_addr.set_nametable_x(if self.registers.control.contains(ControlRegister::NAMETABLE1) { 1 } else { 0 });
-        self.registers.tram_addr.set_nametable_y(if self.registers.control.contains(ControlRegister::NAMETABLE2) { 1 } else { 0 });
+        self.registers.tram_addr.set_nametable_x(
+            if self.registers.control.contains(ControlRegister::NAMETABLE1) {
+                1
+            } else {
+                0
+            },
+        );
+        self.registers.tram_addr.set_nametable_y(
+            if self.registers.control.contains(ControlRegister::NAMETABLE2) {
+                1
+            } else {
+                0
+            },
+        );
     }
 
     fn read_status(&mut self) -> u8 {
@@ -418,14 +630,10 @@ impl PPU {
         }
     }
 
-    fn ppu_read(&mut self, addr: u16) -> u8 {
+    fn ppu_read(&self, addr: u16) -> u8 {
         match addr {
-            0x0000..=0x1FFF => {
-                self.chr_rom[addr as usize]
-            },
-            0x2000..=0x3EFF => {
-                self.vram[self.mirror_vram_addr(addr) as usize]
-            }
+            0x0000..=0x1FFF => self.chr_rom[addr as usize],
+            0x2000..=0x3EFF => self.vram[self.mirror_vram_addr(addr) as usize],
             0x3F00..=0x3FFF => {
                 let mut addr = addr & 0x001F;
                 if addr == 0x0010 {
@@ -441,7 +649,11 @@ impl PPU {
                     addr = 0x000C;
                 }
 
-                let palette_mask = if self.registers.mask.is_grayscale() { 0x30 } else { 0x3F };
+                let palette_mask = if self.registers.mask.is_grayscale() {
+                    0x30
+                } else {
+                    0x3F
+                };
                 self.palette_table[addr as usize] & palette_mask
             }
             _ => panic!("Unknown address {:04X}", addr),
@@ -450,12 +662,8 @@ impl PPU {
 
     fn ppu_write(&mut self, addr: u16, value: u8) {
         match addr {
-            0x0000..=0x1FFF => {
-                self.chr_rom[addr as usize] = value
-            },
-            0x2000..=0x3EFF => {
-                self.vram[self.mirror_vram_addr(addr) as usize] = value
-            }
+            0x0000..=0x1FFF => self.chr_rom[addr as usize] = value,
+            0x2000..=0x3EFF => self.vram[self.mirror_vram_addr(addr) as usize] = value,
             0x3F00..=0x3FFF => {
                 let mut addr = addr & 0x001F;
                 if addr == 0x0010 {
@@ -480,8 +688,7 @@ impl PPU {
 
 impl Mem for PPU {
     fn mem_read(&mut self, addr: u16) -> u8 {
-        let register_result = PPU_REGISTERS_MAP
-            .get(&addr);
+        let register_result = PPU_REGISTERS_MAP.get(&addr);
 
         if let Some(register) = register_result {
             if !is_read_allowed(register) {
@@ -490,19 +697,20 @@ impl Mem for PPU {
             }
 
             return match register.field {
-                RegisterField::Status => (self.read_status() & 0xE0) | (self.internal_data_buf & 0x1F),
+                RegisterField::Status => {
+                    (self.read_status() & 0xE0) | (self.internal_data_buf & 0x1F)
+                }
                 RegisterField::OAMData => self.read_oam_data(),
                 RegisterField::Data => self.read_data(),
                 _ => panic!("Unexpected read on {:#?}", register),
-            }
+            };
         }
 
         0x00
     }
 
     fn mem_write(&mut self, addr: u16, value: u8) {
-        let register_result = PPU_REGISTERS_MAP
-            .get(&addr);
+        let register_result = PPU_REGISTERS_MAP.get(&addr);
 
         if let Some(register) = register_result {
             if !is_write_allowed(register) {
@@ -524,13 +732,13 @@ impl Mem for PPU {
                         self.registers.tram_addr.set_coarse_y((value >> 3) as u16);
                         self.address_latch = 0;
                     }
-                },
+                }
                 RegisterField::Address => self.write_to_ppu_address(value),
                 RegisterField::Data => self.write_to_data(value),
                 _ => panic!("Unexpected write on {:#?}", register),
             }
 
-            return
+            return;
         }
     }
 }
