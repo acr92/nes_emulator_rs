@@ -30,6 +30,7 @@ The emulator exists as a learning project, and will deviate from the e-book to e
 - [Easy 6502](https://skilldrick.github.io/easy6502/)
 - [NesDev](https://www.nesdev.org)
 - [6052-NMOS Extra Opcodes](http://www.ffd2.com/fridge/docs/6502-NMOS.extra.opcodes)
+- [One lonely coder - NES Emulator from Scratch on YouTube](https://www.youtube.com/playlist?list=PLrOv9FMX8xJHqMvSGB_9G9nZZ_4IgteYf)
 
 ## Contributing
 
