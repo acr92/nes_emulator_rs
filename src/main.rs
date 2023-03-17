@@ -101,7 +101,7 @@ fn create_render_thread(rx_frame: Receiver<Vec<Frame>>, tx_joycon: Sender<Vec<In
 
     let key_map = create_keymap();
 
-    let mut canvas = window.into_canvas().present_vsync().build().unwrap();
+    let mut canvas = window.into_canvas().build().unwrap();
     let mut event_pump = sdl_context.event_pump().unwrap();
     canvas.set_scale(WINDOW_SCALE, WINDOW_SCALE).unwrap();
 

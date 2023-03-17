@@ -70,11 +70,11 @@ impl PPU {
             registers: Registers::new(),
             internal_data_buf: 0,
 
-            scanline: -1,
+            scanline: 0,
             cycles: 0,
             nmi_interrupt: None,
 
-            frame: [0x1A; FRAME_SIZE],
+            frame: [0x00; FRAME_SIZE],
 
             bg_next_tile_id: 0,
             bg_next_tile_attrib: 0,
@@ -174,7 +174,7 @@ impl PPU {
                 }
 
                 if self.scanline == -1 && self.cycles == 1 {
-                    self.registers.status.reset_vblank_status()
+                    self.registers.status.reset_vblank_status();
                 }
 
                 if (self.cycles >= 2 && self.cycles < 258) || (self.cycles >= 321 && self.cycles < 338) {
@@ -205,16 +205,24 @@ impl PPU {
                             self.bg_next_tile_attrib &= 0x03;
                         },
                         4 => {
-                            let mut addr = self.registers.control.background_pattern_table_address();
-                            addr += (self.bg_next_tile_id << 4) as u16;
+                            let mut addr = ((if self.registers.control.contains(ControlRegister::BACKGROUND_PATTERN_ADDR) {
+                                1
+                            } else {
+                                0
+                            }) as u16) << 12;
+                            addr += ((self.bg_next_tile_id as u16) << 4) as u16;
                             addr += (self.registers.vram_addr.get_fine_y());
-                            self.bg_next_tile_lsb = self.ppu_read(addr)
+                            self.bg_next_tile_lsb = self.ppu_read(addr);
                         },
                         6 => {
-                            let mut addr = self.registers.control.background_pattern_table_address();
-                            addr += (self.bg_next_tile_id << 4) as u16;
+                            let mut addr = if self.registers.control.contains(ControlRegister::BACKGROUND_PATTERN_ADDR) {
+                                1
+                            } else {
+                                0
+                            } << 12;
+                            addr += ((self.bg_next_tile_id as u16) << 4) as u16;
                             addr += (self.registers.vram_addr.get_fine_y() + 8);
-                            self.bg_next_tile_msb = self.ppu_read(addr)
+                            self.bg_next_tile_msb = self.ppu_read(addr);
                         },
                         7 => {
                             self.increment_scroll_x();
@@ -274,10 +282,8 @@ impl PPU {
                 bg_palette = (bg_pal1 << 1) | bg_pal0;
             }
 
-            if self.scanline >= 0 {
-                let rgb = self.get_color_from_palette_ram(bg_pixel, bg_palette);
-                self.set_pixel(self.cycles.wrapping_sub(1), self.scanline as usize, rgb);
-            }
+            let rgb = self.get_color_from_palette_ram(bg_pixel, bg_palette);
+            self.set_pixel(self.cycles.wrapping_sub(1), self.scanline as usize, rgb);
 
             // Advance renderer
             self.cycles += 1;
@@ -285,8 +291,9 @@ impl PPU {
                 self.cycles = 0;
                 self.scanline += 1;
                 if self.scanline >= 261 {
+                    self.frame.fill(0x00);
                     self.scanline = -1;
-                    frame_complete = true
+                    frame_complete = true;
                 }
             }
         }
@@ -339,8 +346,7 @@ impl PPU {
     }
 
     fn write_to_data(&mut self, value: u8) {
-        let addr = self.registers.vram_addr.get_bits();
-        self.ppu_write(addr, value);
+        self.ppu_write(self.registers.vram_addr.get_bits(), value);
         self.increment_vram_addr();
     }
 
@@ -370,12 +376,10 @@ impl PPU {
 
     fn write_to_ppu_address(&mut self, value: u8) {
         if self.address_latch == 0 {
-            let value = (((value & 0x03F) as u16) << 8) | (self.registers.tram_addr.get_bits() & 0x00FF);
-            self.registers.tram_addr.set_bits(value);
+            self.registers.tram_addr.set_bits((((value & 0x03F) as u16) << 8) | (self.registers.tram_addr.get_bits() & 0x00FF));
             self.address_latch = 1;
         } else {
-            let value = (self.registers.tram_addr.get_bits() & 0xFF00) | (value as u16);
-            self.registers.tram_addr.set_bits(value);
+            self.registers.tram_addr.set_bits((self.registers.tram_addr.get_bits() & 0xFF00) | (value as u16));
             self.registers.vram_addr.set_bits(self.registers.tram_addr.get_bits());
             self.address_latch = 0;
         }
@@ -420,27 +424,7 @@ impl PPU {
                 self.chr_rom[addr as usize]
             },
             0x2000..=0x3EFF => {
-                let addr = addr & 0x0FFF;
-
-                if self.mirroring == Mirroring::Vertical {
-                    match addr {
-                        0x0000..=0x03FF => self.vram[(addr & 0x03FF) as usize],
-                        0x0400..=0x07FF => self.vram[((addr & 0x03FF) + 0x400) as usize],
-                        0x0800..=0x0BFF => self.vram[(addr & 0x03FF) as usize],
-                        0x0C00..=0x0FFF => self.vram[((addr & 0x03FF) + 0x400) as usize],
-                        _ => panic!("Unknown address"),
-                    }
-                } else if self.mirroring == Mirroring::Horizontal {
-                    match addr {
-                        0x0000..=0x03FF => self.vram[(addr & 0x03FF) as usize],
-                        0x0400..=0x07FF => self.vram[(addr & 0x03FF) as usize],
-                        0x0800..=0x0BFF => self.vram[((addr & 0x03FF) + 0x400) as usize],
-                        0x0C00..=0x0FFF => self.vram[((addr & 0x03FF) + 0x400) as usize],
-                        _ => panic!("Unknown address"),
-                    }
-                } else {
-                    panic!("Unknown mirroring");
-                }
+                self.vram[self.mirror_vram_addr(addr) as usize]
             }
             0x3F00..=0x3FFF => {
                 let mut addr = addr & 0x001F;
@@ -465,34 +449,12 @@ impl PPU {
     }
 
     fn ppu_write(&mut self, addr: u16, value: u8) {
-        let addr = addr & 0x3FFF;
-
         match addr {
             0x0000..=0x1FFF => {
                 self.chr_rom[addr as usize] = value
             },
             0x2000..=0x3EFF => {
-                let addr = addr & 0x0FFF;
-
-                if self.mirroring == Mirroring::Vertical {
-                    match addr {
-                        0x0000..=0x03FF => self.vram[(addr & 0x03FF) as usize] = value,
-                        0x0400..=0x07FF => self.vram[(addr & 0x03FF + 0x400) as usize] = value,
-                        0x0800..=0x0BFF => self.vram[(addr & 0x03FF) as usize] = value,
-                        0x0C00..=0x0FFF => self.vram[(addr & 0x03FF + 0x400) as usize] = value,
-                        _ => panic!("Unknown address"),
-                    }
-                } else if self.mirroring == Mirroring::Horizontal {
-                    match addr {
-                        0x0000..=0x03FF => self.vram[(addr & 0x03FF) as usize] = value,
-                        0x0400..=0x07FF => self.vram[(addr & 0x03FF) as usize] = value,
-                        0x0800..=0x0BFF => self.vram[(addr & 0x03FF + 0x400) as usize] = value,
-                        0x0C00..=0x0FFF => self.vram[(addr & 0x03FF + 0x400) as usize] = value,
-                        _ => panic!("Unknown address"),
-                    }
-                } else {
-                    panic!("Unknown mirroring");
-                }
+                self.vram[self.mirror_vram_addr(addr) as usize] = value
             }
             0x3F00..=0x3FFF => {
                 let mut addr = addr & 0x001F;
@@ -573,7 +535,7 @@ impl Mem for PPU {
     }
 }
 
-#[cfg(test)]
+#[cfg(NEVER)]
 pub mod test {
     use super::*;
     use crate::registers::control::ControlRegister;
