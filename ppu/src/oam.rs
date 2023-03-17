@@ -41,7 +41,7 @@ impl Oam {
     }
 
     pub fn oam_iter(oam_data: &[u8]) -> impl Iterator<Item = Oam> + '_ {
-        oam_data.chunks_exact(4).rev().map(Oam::new)
+        oam_data.chunks_exact(4).map(Oam::new)
     }
 
     pub fn palette_index(&self) -> u8 {

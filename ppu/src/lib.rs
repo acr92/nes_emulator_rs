@@ -446,8 +446,8 @@ impl PPU {
             if self.registers.mask.show_sprites() {
                 for (index, oam) in self.sprite_scanline.iter().enumerate() {
                     if oam.tile_x == 0 {
-                        let fg_pixel_lo = self.sprite_shifter_pattern_lo[index] & 0x80 >> 7;
-                        let fg_pixel_hi = self.sprite_shifter_pattern_hi[index] & 0x80 >> 7;
+                        let fg_pixel_lo = (self.sprite_shifter_pattern_lo[index] & 0x80) >> 7;
+                        let fg_pixel_hi = (self.sprite_shifter_pattern_hi[index] & 0x80) >> 7;
                         fg_pixel = (fg_pixel_hi << 1) | fg_pixel_lo;
 
                         fg_palette = oam.palette_index() + 0x04;
