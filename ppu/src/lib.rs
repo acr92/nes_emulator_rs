@@ -357,7 +357,7 @@ impl PPU {
                                 // flipped vertically
                                 self.registers.control.sprite_pattern_table_address()
                                     | (oam.tile_index << 4)
-                                    | (7 - self.scanline as u16 - oam.tile_y as u16)
+                                    | (7 - (self.scanline as u16 - oam.tile_y as u16) & 0x07)
                             }
                         } else {
                             // 8x16 mode
