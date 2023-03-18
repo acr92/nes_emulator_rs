@@ -216,6 +216,7 @@ impl PPU {
         let mut frame_complete = false;
 
         for _ in 0..cycles {
+            let _scan = self.scanline;
             if self.scanline >= -1 && self.scanline < 240 {
                 if self.scanline == 0 && self.cycles == 0 {
                     // "Odd Frame" cycle skip
@@ -224,8 +225,8 @@ impl PPU {
 
                 if self.scanline == -1 && self.cycles == 1 {
                     self.registers.status.reset_vblank_status();
-                    self.registers.status.set_sprite_overflow(false);
                     self.registers.status.set_sprite_zero_hit(false);
+                    self.registers.status.set_sprite_overflow(false);
 
                     // clear shifters
                     self.sprite_shifter_pattern_lo = [0; 8];
@@ -321,7 +322,8 @@ impl PPU {
                     self.sprite_scanline = vec![];
 
                     let mut sprite_count = 0;
-                    for oam in Oam::oam_iter(&self.oam_data) {
+                    self.sprite_zero_hit_possible = false;
+                    for (index, oam) in Oam::oam_iter(&self.oam_data).enumerate() {
                         if sprite_count >= 9 {
                             break;
                         }
@@ -330,7 +332,13 @@ impl PPU {
 
                         if diff >= 0 && diff < self.registers.control.sprite_size() as i16 {
                             if self.sprite_scanline.len() < 8 {
+                                // sprite zero
+                                if index == 0 {
+                                    self.sprite_zero_hit_possible = true;
+                                }
+
                                 self.sprite_scanline.push(oam.clone());
+                                sprite_count += 1;
                             }
                         }
                     }
@@ -444,6 +452,8 @@ impl PPU {
             let mut fg_priority = false;
 
             if self.registers.mask.show_sprites() {
+                self.sprite_zero_being_rendered = false;
+
                 for (index, oam) in self.sprite_scanline.iter().enumerate() {
                     if oam.tile_x == 0 {
                         let fg_pixel_lo = (self.sprite_shifter_pattern_lo[index] & 0x80) >> 7;
@@ -455,6 +465,10 @@ impl PPU {
 
                         // non transparent pixel
                         if fg_pixel != 0 {
+                            if index != 0 {
+                                self.sprite_zero_being_rendered = true;
+                            }
+
                             break;
                         }
                     }
@@ -468,11 +482,29 @@ impl PPU {
             } else if bg_pixel > 0 && fg_pixel == 0 {
                 (bg_pixel, bg_palette)
             } else {
-                if fg_priority {
+                let (pixel, palette) = if fg_priority {
                     (fg_pixel, fg_palette)
                 } else {
                     (bg_pixel, bg_palette)
+                };
+
+                if self.sprite_zero_hit_possible && self.sprite_zero_being_rendered {
+                    if self.registers.mask.show_background() && self.registers.mask.show_sprites() {
+                        if !self.registers.mask.leftmost_8pxl_background()
+                            && !self.registers.mask.leftmost_8pxl_sprite()
+                        {
+                            if self.cycles >= 9 && self.cycles < 258 {
+                                self.registers.status.set_sprite_zero_hit(true);
+                            }
+                        } else {
+                            if self.cycles >= 1 && self.cycles < 258 {
+                                self.registers.status.set_sprite_zero_hit(true);
+                            }
+                        }
+                    }
                 }
+
+                (pixel, palette)
             };
 
             let rgb = self.get_color_from_palette_ram(pixel, palette);
