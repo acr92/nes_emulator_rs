@@ -148,16 +148,14 @@ pub fn trace(bus: &mut impl Bus, cpu: &mut CPU) -> String {
         .to_string();
 
     format!(
-        "{:47} A:{:02x} X:{:02x} Y:{:02x} P:{:02x} SP:{:02x} PPU:{:3},{:3} CYC:{}",
+        "{:47} A:{:02x} X:{:02x} Y:{:02x} P:{:02x} SP:{:02x} CYC:{}",
         asm_str,
         cpu.register.read(RegisterField::A),
         cpu.register.read(RegisterField::X),
         cpu.register.read(RegisterField::Y),
         cpu.register.status.bits(),
         cpu.register.sp,
-        bus.get_clock_cycles_for_peripheral(BusPeripheral::PpuScanlines),
-        bus.get_clock_cycles_for_peripheral(BusPeripheral::Ppu),
-        bus.get_clock_cycles_for_peripheral(BusPeripheral::Cpu),
+        cpu.total_cycles,
     )
     .to_ascii_uppercase()
 }

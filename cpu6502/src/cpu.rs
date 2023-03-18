@@ -8,6 +8,7 @@ pub struct CPU {
 
     pub complete: bool,
     pub cycles: u8,
+    pub total_cycles: usize,
 }
 
 fn page_cross(a: u16, b: u16) -> bool {
@@ -26,6 +27,7 @@ impl CPU {
             register: Register::new(),
             complete: false,
             cycles: 0,
+            total_cycles: 0,
         }
     }
 
@@ -53,6 +55,7 @@ impl CPU {
     pub fn tick(&mut self, bus: &mut impl Mem) {
         if self.cycles > 0 {
             self.cycles -= 1;
+            self.total_cycles += 1;
             return;
         }
 
@@ -193,7 +196,8 @@ impl CPU {
             }
         }
 
-        self.cycles += opcode.cycles;
+        self.cycles += opcode.cycles - 1;
+        self.total_cycles += 1;
 
         if program_counter_state == self.register.pc {
             self.register.pc = self.register.pc.wrapping_add((opcode.len - 1) as u16);
@@ -499,7 +503,10 @@ impl CPU {
     }
 
     fn rti(&mut self, bus: &mut impl Mem) {
-        self.plp(bus);
+        let new_status = self.stack_pop(bus);
+        self.register.write(RegisterField::Status, new_status);
+        self.register.status.remove(CpuFlags::BREAK);
+        self.register.status.remove(CpuFlags::BREAK2);
         self.register.pc = self.stack_pop_u16(bus);
     }
 
@@ -597,14 +604,16 @@ impl CPU {
     pub fn interrupt_nmi(&mut self, bus: &mut impl Mem) {
         self.stack_push_u16(bus, self.register.pc);
         let mut flag = self.register.status;
+
         flag.set(CpuFlags::BREAK, false);
         flag.set(CpuFlags::BREAK2, true);
 
         self.stack_push(bus, flag.bits());
         self.register.status.insert(CpuFlags::INTERRUPT_DISABLE);
 
-        self.cycles = 8;
         self.register.pc = bus.mem_read_u16(VECTOR_NMI_INTERRUPT_HANDLER);
+
+        self.cycles = 8;
     }
 }
 

@@ -227,6 +227,8 @@ impl PPU {
                 self.registers.status.set_sprite_zero_hit(false);
                 self.registers.status.set_sprite_overflow(false);
 
+                println!("BEGIN");
+
                 // clear shifters
                 self.sprite_shifter_pattern_lo = [0; 8];
                 self.sprite_shifter_pattern_hi = [0; 8];
@@ -241,8 +243,15 @@ impl PPU {
                     0 => {
                         self.load_background_shifters();
 
-                        self.bg_next_tile_id =
-                            self.ppu_read(0x2000 | (self.registers.vram_addr.get_bits() & 0x0FFF));
+                        let addr = 0x2000 | (self.registers.vram_addr.get_bits() & 0x0FFF);
+                        self.bg_next_tile_id = self.ppu_read(addr);
+
+                        if _scan == 220 {
+                            println!(
+                                "{} {} cg={} bg_next_tile_id = ppu_read({:04X}) = {:02X}",
+                                _scan, self.cycles, cycle_group, addr, self.bg_next_tile_id
+                            );
+                        }
                     }
                     2 => {
                         let mut addr = 0x23C0;
@@ -252,6 +261,12 @@ impl PPU {
                         addr |= (self.registers.vram_addr.get_coarse_x() >> 2);
 
                         self.bg_next_tile_attrib = self.ppu_read(addr);
+                        if _scan == 220 {
+                            println!(
+                                "{} {} cg={} bg_next_tile_attrib = ppu_read({:04X}) = {:02X}",
+                                _scan, self.cycles, cycle_group, addr, self.bg_next_tile_attrib
+                            );
+                        }
 
                         if self.registers.vram_addr.get_coarse_y() & 0x02 > 0 {
                             self.bg_next_tile_attrib >>= 4;
@@ -260,6 +275,13 @@ impl PPU {
                             self.bg_next_tile_attrib >>= 2;
                         }
                         self.bg_next_tile_attrib &= 0x03;
+
+                        if _scan == 220 {
+                            println!(
+                                "{} {} cg={} bg_next_tile_attrib = {:02X}",
+                                _scan, self.cycles, cycle_group, self.bg_next_tile_attrib
+                            );
+                        }
                     }
                     4 => {
                         let mut addr = ((if self
@@ -272,9 +294,17 @@ impl PPU {
                             0
                         }) as u16)
                             << 12;
+
                         addr += ((self.bg_next_tile_id as u16) << 4) as u16;
                         addr += (self.registers.vram_addr.get_fine_y());
                         self.bg_next_tile_lsb = self.ppu_read(addr);
+
+                        if _scan == 220 {
+                            println!(
+                                "{} {} cg={} bg_next_tile_lsb = ppu_read({:04X}) = {:02X}",
+                                _scan, self.cycles, cycle_group, addr, self.bg_next_tile_lsb
+                            );
+                        }
                     }
                     6 => {
                         let mut addr = if self
@@ -289,9 +319,23 @@ impl PPU {
                         addr += ((self.bg_next_tile_id as u16) << 4) as u16;
                         addr += (self.registers.vram_addr.get_fine_y() + 8);
                         self.bg_next_tile_msb = self.ppu_read(addr);
+
+                        if _scan == 220 {
+                            println!(
+                                "{} {} cg={} bg_next_tile_msb = ppu_read({:04X}) = {:02X}",
+                                _scan, self.cycles, cycle_group, addr, self.bg_next_tile_msb
+                            );
+                        }
                     }
                     7 => {
                         self.increment_scroll_x();
+
+                        if _scan == 220 {
+                            println!(
+                                "{} {} cg={} increment_scroll_x",
+                                _scan, self.cycles, cycle_group
+                            );
+                        }
                     }
                     _ => {}
                 }
@@ -421,9 +465,13 @@ impl PPU {
             if self.scanline == 241 && self.cycles == 1 {
                 self.registers.status.set_vblank_status(true);
 
+                println!(
+                    "END enable_nmi={}",
+                    self.registers.control.generate_vblank_nmi() as u32
+                );
+
                 if self.registers.control.generate_vblank_nmi() {
                     self.nmi_interrupt = Some(1);
-                    frame_complete = true
                 }
             }
         }
@@ -517,6 +565,7 @@ impl PPU {
                 self.frame.fill(0x00);
                 self.scanline = -1;
                 frame_complete = true;
+                println!("FRAME_COMPLETE");
             }
         }
 
@@ -633,7 +682,7 @@ impl PPU {
     }
 
     fn read_status(&mut self) -> u8 {
-        let data = self.registers.status.snapshot();
+        let data = (self.registers.status.bits() & 0xE0) | (self.internal_data_buf & 0x1F);
         self.registers.status.reset_vblank_status();
         self.address_latch = 0;
         data
@@ -726,9 +775,7 @@ impl Mem for PPU {
             }
 
             return match register.field {
-                RegisterField::Status => {
-                    (self.read_status() & 0xE0) | (self.internal_data_buf & 0x1F)
-                }
+                RegisterField::Status => self.read_status(),
                 RegisterField::OAMData => self.read_oam_data(),
                 RegisterField::Data => self.read_data(),
                 _ => panic!("Unexpected read on {:#?}", register),
@@ -739,6 +786,8 @@ impl Mem for PPU {
     }
 
     fn mem_write(&mut self, addr: u16, value: u8) {
+        let vram_before = self.registers.vram_addr.get_bits();
+        let tram_before = self.registers.tram_addr.get_bits();
         let register_result = PPU_REGISTERS_MAP.get(&addr);
 
         if let Some(register) = register_result {
@@ -765,6 +814,25 @@ impl Mem for PPU {
                 RegisterField::Address => self.write_to_ppu_address(value),
                 RegisterField::Data => self.write_to_data(value),
                 _ => panic!("Unexpected write on {:#?}", register),
+            }
+
+            if tram_before != self.registers.tram_addr.get_bits() {
+                println!(
+                    "{} {} TRAM_ADDR {:04X} => {:04X}",
+                    self.scanline,
+                    self.cycles,
+                    tram_before,
+                    self.registers.tram_addr.get_bits()
+                );
+            }
+            if vram_before != self.registers.vram_addr.get_bits() {
+                println!(
+                    "{} {} VRAM_ADDR {:04X} => {:04X}",
+                    self.scanline,
+                    self.cycles,
+                    vram_before,
+                    self.registers.vram_addr.get_bits()
+                );
             }
 
             return;

@@ -99,6 +99,17 @@ mod tests {
     }
 
     #[test]
+    fn test_17250() {
+        let mut register = LoopyRegister::new();
+        register.set_bits(17250);
+        assert_eq!(register.get_coarse_x(), 2);
+        assert_eq!(register.get_coarse_y(), 27);
+        assert_eq!(register.get_nametable_x(), 0);
+        assert_eq!(register.get_nametable_y(), 0);
+        assert_eq!(register.get_fine_y(), 4);
+    }
+
+    #[test]
     fn test_new() {
         let register = LoopyRegister::new();
         assert_eq!(register.get_bits(), 0x0000);

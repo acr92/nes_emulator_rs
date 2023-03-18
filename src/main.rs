@@ -19,7 +19,6 @@ use sdl2::EventPump;
 use std::collections::HashMap;
 use std::fmt::format;
 use std::path::Path;
-use std::rc::Rc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc, RwLock};
 use std::{env, thread};

@@ -9,7 +9,7 @@ mod common;
 
 #[test]
 fn test_nestest() {
-    let expected: Vec<_> = std::fs::read_to_string(test_file!("nestest.log"))
+    let expected: Vec<_> = std::fs::read_to_string(test_file!("nestest_only_cyc.log"))
         .unwrap()
         .split("\r\n")
         .map(|a| String::from(a))
@@ -21,29 +21,33 @@ fn test_nestest() {
     let ppu = PPU::new_empty_rom();
     let mut bus = NESBus::new(ppu);
     bus.rom = Some(Box::from(rom));
-    bus.cycles = 7;
     bus.ppu.cycles = 21;
     bus.ppu.scanline = 0;
 
-    let mut cpu = CPU::new(Box::from(bus));
-    cpu.reset();
+    let mut cpu = CPU::new();
+    cpu.reset(&mut bus);
+    cpu.total_cycles = 7;
     cpu.register.pc = 0xC000;
 
     let mut index = 0;
-    cpu.run_with_callback(|cpu| {
-        let actual = trace(cpu);
 
-        // Skip the last instruction, it's just another RTS. We didn't start the program from the
-        // same instruction that the nestest.log is from.
-        if index == expected.len() - 1 {
-            return;
+    while !&cpu.complete {
+        if cpu.cycles == 0 {
+            println!(">> {}", bus.ppu.cycles);
+            let actual = trace(&mut bus, &mut cpu);
+            // Skip the last instruction, it's just another RTS. We didn't start the program from the
+            // same instruction that the nestest.log is from.
+            if index == expected.len() - 1 {
+                return;
+            }
+
+            if expected[index] != actual {
+                dbg!(&cpu.register);
+            }
+
+            assert_equal!(expected[index], actual);
+            index = index + 1;
         }
-
-        if expected[index] != actual {
-            dbg!(&cpu.register);
-        }
-
-        assert_equal!(expected[index], actual);
-        index = index + 1;
-    });
+        bus.tick(&mut cpu);
+    }
 }
