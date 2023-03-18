@@ -24,7 +24,7 @@ impl Mem for MockBus {
 }
 
 impl Bus<'static> for MockBus {
-    fn tick(&mut self, _: u8) {
+    fn tick(&mut self) {
         // Do nothing
     }
 

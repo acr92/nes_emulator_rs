@@ -119,7 +119,7 @@ impl Bus<'static> for NESBus<'static> {
     }
 }
 
-impl Mem for NESBus<'_> {
+impl Mem for NESBus {
     fn mem_read(&mut self, addr: u16) -> u8 {
         match addr {
             RAM_START..=RAM_MIRRORS_END => {
