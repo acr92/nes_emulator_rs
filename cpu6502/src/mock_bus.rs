@@ -23,11 +23,7 @@ impl Mem for MockBus {
     }
 }
 
-impl Bus<'static> for MockBus {
-    fn tick(&mut self) {
-        // Do nothing
-    }
-
+impl Bus for MockBus {
     fn poll_nmi_status(&mut self) -> Option<u8> {
         None
     }

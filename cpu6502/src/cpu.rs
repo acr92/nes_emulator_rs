@@ -535,7 +535,7 @@ impl CPU {
         }
     }
 
-    fn get_absolute_address(
+    pub fn get_absolute_address(
         &mut self,
         bus: &mut impl Mem,
         mode: &AddressingMode,

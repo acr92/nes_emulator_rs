@@ -1,12 +1,11 @@
-use core::bus::BusPeripheral;
-use core::mem::Mem;
+use core::bus::{Bus, BusPeripheral};
 use cpu6502::cpu::CPU;
 use cpu6502::opcodes;
 use cpu6502::opcodes::{AddressingMode, Instruction, OpCode};
 use cpu6502::register::RegisterField;
 
-pub fn trace_light(cpu: &mut CPU) -> String {
-    let code = cpu.mem_read(cpu.register.pc);
+pub fn trace_light(bus: &mut impl Bus, cpu: &mut CPU) -> String {
+    let code = bus.mem_read(cpu.register.pc);
     let ops = opcodes::OPCODES_MAP
         .get(&code)
         .unwrap_or_else(|| panic!("Unknown OP 0x{:02X}", code));
@@ -17,8 +16,8 @@ pub fn trace_light(cpu: &mut CPU) -> String {
     )
 }
 
-pub fn trace(cpu: &mut CPU) -> String {
-    let code = cpu.mem_read(cpu.register.pc);
+pub fn trace(bus: &mut impl Bus, cpu: &mut CPU) -> String {
+    let code = bus.mem_read(cpu.register.pc);
     let ops = opcodes::OPCODES_MAP
         .get(&code)
         .unwrap_or_else(|| panic!("Unknown OP 0x{:02X}", code));
@@ -32,8 +31,8 @@ pub fn trace(cpu: &mut CPU) -> String {
         | AddressingMode::Accumulator
         | AddressingMode::NoneAddressing => (0, 0),
         _ => {
-            let addr = cpu.get_absolute_address(&ops.mode, begin + 1);
-            (addr, cpu.mem_read(addr))
+            let addr = cpu.get_absolute_address(bus, &ops.mode, begin + 1);
+            (addr, bus.mem_read(addr))
         }
     };
 
@@ -43,7 +42,7 @@ pub fn trace(cpu: &mut CPU) -> String {
             _ => String::from(""),
         },
         2 => {
-            let address: u8 = cpu.mem_read(begin + 1);
+            let address: u8 = bus.mem_read(begin + 1);
             hex_dump.push(address);
 
             match ops.mode {
@@ -86,23 +85,23 @@ pub fn trace(cpu: &mut CPU) -> String {
             }
         }
         3 => {
-            let address_lo = cpu.mem_read(begin + 1);
-            let address_hi = cpu.mem_read(begin + 2);
+            let address_lo = bus.mem_read(begin + 1);
+            let address_hi = bus.mem_read(begin + 2);
             hex_dump.push(address_lo);
             hex_dump.push(address_hi);
 
-            let address = cpu.mem_read_u16(begin + 1);
+            let address = bus.mem_read_u16(begin + 1);
 
             match ops.mode {
                 AddressingMode::NoneAddressing => {
                     if ops.code == 0x6c {
                         //jmp indirect
                         let jmp_addr = if address & 0x00FF == 0x00FF {
-                            let lo = cpu.mem_read(address);
-                            let hi = cpu.mem_read(address & 0xFF00);
+                            let lo = bus.mem_read(address);
+                            let hi = bus.mem_read(address & 0xFF00);
                             (hi as u16) << 8 | (lo as u16)
                         } else {
-                            cpu.mem_read_u16(address)
+                            bus.mem_read_u16(address)
                         };
 
                         // let jmp_addr = cpu.mem_read_u16(address);
@@ -156,10 +155,9 @@ pub fn trace(cpu: &mut CPU) -> String {
         cpu.register.read(RegisterField::Y),
         cpu.register.status.bits(),
         cpu.register.sp,
-        cpu.bus
-            .get_clock_cycles_for_peripheral(BusPeripheral::PpuScanlines),
-        cpu.bus.get_clock_cycles_for_peripheral(BusPeripheral::Ppu),
-        cpu.bus.get_clock_cycles_for_peripheral(BusPeripheral::Cpu),
+        bus.get_clock_cycles_for_peripheral(BusPeripheral::PpuScanlines),
+        bus.get_clock_cycles_for_peripheral(BusPeripheral::Ppu),
+        bus.get_clock_cycles_for_peripheral(BusPeripheral::Cpu),
     )
     .to_ascii_uppercase()
 }
@@ -186,7 +184,8 @@ mod test {
         bus.mem_write(102, 0xca);
         bus.mem_write(103, 0x88);
         bus.mem_write(104, 0x00);
-        let mut cpu = CPU::new(Box::from(bus));
+        let mut cpu = CPU::new();
+        let mut bus = NESBus::new(PPU::new_empty_rom());
 
         cpu.register.pc = 0x64;
         cpu.register.write(RegisterField::A, 1);
@@ -194,7 +193,7 @@ mod test {
         cpu.register.write(RegisterField::Y, 3);
         let mut result: Vec<String> = vec![];
         cpu.run_with_callback(|cpu| {
-            result.push(trace(cpu));
+            result.push(trace(&mut bus, cpu));
         });
         assert_eq!(
             "0064  A2 01     LDX #$01                        A:01 X:02 Y:03 P:24 SP:FD PPU:  0,  0 CYC:0",
@@ -224,11 +223,12 @@ mod test {
         //target cell
         bus.mem_write(0x400, 0xAA);
 
-        let mut cpu = CPU::new(Box::from(bus));
+        let mut cpu = CPU::new();
+        let mut bus = NESBus::new(PPU::new_empty_rom());
         cpu.register.pc = 0x64;
         let mut result: Vec<String> = vec![];
         cpu.run_with_callback(|cpu| {
-            result.push(trace(cpu));
+            result.push(trace(&mut bus, cpu));
         });
         assert_eq!(
             "0064  11 33     ORA ($33),Y = 0400 @ 0400 = AA  A:00 X:00 Y:00 P:24 SP:FD PPU:  0,  0 CYC:0",

@@ -212,314 +212,311 @@ impl PPU {
         }
     }
 
-    pub fn tick(&mut self, cycles: u8) -> bool {
+    pub fn tick(&mut self) -> bool {
         let mut frame_complete = false;
 
-        for _ in 0..cycles {
-            let _scan = self.scanline;
-            if self.scanline >= -1 && self.scanline < 240 {
-                if self.scanline == 0 && self.cycles == 0 {
-                    // "Odd Frame" cycle skip
-                    self.cycles = 1;
-                }
+        let _scan = self.scanline;
+        if self.scanline >= -1 && self.scanline < 240 {
+            if self.scanline == 0 && self.cycles == 0 {
+                // "Odd Frame" cycle skip
+                self.cycles = 1;
+            }
 
-                if self.scanline == -1 && self.cycles == 1 {
-                    self.registers.status.reset_vblank_status();
-                    self.registers.status.set_sprite_zero_hit(false);
-                    self.registers.status.set_sprite_overflow(false);
+            if self.scanline == -1 && self.cycles == 1 {
+                self.registers.status.reset_vblank_status();
+                self.registers.status.set_sprite_zero_hit(false);
+                self.registers.status.set_sprite_overflow(false);
 
-                    // clear shifters
-                    self.sprite_shifter_pattern_lo = [0; 8];
-                    self.sprite_shifter_pattern_hi = [0; 8];
-                }
+                // clear shifters
+                self.sprite_shifter_pattern_lo = [0; 8];
+                self.sprite_shifter_pattern_hi = [0; 8];
+            }
 
-                if (self.cycles >= 2 && self.cycles < 258)
-                    || (self.cycles >= 321 && self.cycles < 338)
-                {
-                    self.update_shifters();
+            if (self.cycles >= 2 && self.cycles < 258) || (self.cycles >= 321 && self.cycles < 338)
+            {
+                self.update_shifters();
 
-                    let cycle_group = (self.cycles - 1) % 8;
-                    match cycle_group {
-                        0 => {
-                            self.load_background_shifters();
+                let cycle_group = (self.cycles - 1) % 8;
+                match cycle_group {
+                    0 => {
+                        self.load_background_shifters();
 
-                            self.bg_next_tile_id = self
-                                .ppu_read(0x2000 | (self.registers.vram_addr.get_bits() & 0x0FFF));
-                        }
-                        2 => {
-                            let mut addr = 0x23C0;
-                            addr |= self.registers.vram_addr.get_nametable_y() << 11;
-                            addr |= self.registers.vram_addr.get_nametable_x() << 10;
-                            addr |= (self.registers.vram_addr.get_coarse_y() >> 2) << 3;
-                            addr |= (self.registers.vram_addr.get_coarse_x() >> 2);
-
-                            self.bg_next_tile_attrib = self.ppu_read(addr);
-
-                            if self.registers.vram_addr.get_coarse_y() & 0x02 > 0 {
-                                self.bg_next_tile_attrib >>= 4;
-                            }
-                            if self.registers.vram_addr.get_coarse_x() & 0x02 > 0 {
-                                self.bg_next_tile_attrib >>= 2;
-                            }
-                            self.bg_next_tile_attrib &= 0x03;
-                        }
-                        4 => {
-                            let mut addr = ((if self
-                                .registers
-                                .control
-                                .contains(ControlRegister::BACKGROUND_PATTERN_ADDR)
-                            {
-                                1
-                            } else {
-                                0
-                            }) as u16)
-                                << 12;
-                            addr += ((self.bg_next_tile_id as u16) << 4) as u16;
-                            addr += (self.registers.vram_addr.get_fine_y());
-                            self.bg_next_tile_lsb = self.ppu_read(addr);
-                        }
-                        6 => {
-                            let mut addr = if self
-                                .registers
-                                .control
-                                .contains(ControlRegister::BACKGROUND_PATTERN_ADDR)
-                            {
-                                1
-                            } else {
-                                0
-                            } << 12;
-                            addr += ((self.bg_next_tile_id as u16) << 4) as u16;
-                            addr += (self.registers.vram_addr.get_fine_y() + 8);
-                            self.bg_next_tile_msb = self.ppu_read(addr);
-                        }
-                        7 => {
-                            self.increment_scroll_x();
-                        }
-                        _ => {}
+                        self.bg_next_tile_id =
+                            self.ppu_read(0x2000 | (self.registers.vram_addr.get_bits() & 0x0FFF));
                     }
-                }
+                    2 => {
+                        let mut addr = 0x23C0;
+                        addr |= self.registers.vram_addr.get_nametable_y() << 11;
+                        addr |= self.registers.vram_addr.get_nametable_x() << 10;
+                        addr |= (self.registers.vram_addr.get_coarse_y() >> 2) << 3;
+                        addr |= (self.registers.vram_addr.get_coarse_x() >> 2);
 
-                if self.cycles == 256 {
-                    self.increment_scroll_y()
-                }
+                        self.bg_next_tile_attrib = self.ppu_read(addr);
 
-                if self.cycles == 257 {
-                    self.load_background_shifters();
-                    self.transfer_address_x();
-                }
-
-                if self.cycles == 338 || self.cycles == 340 {
-                    self.bg_next_tile_id =
-                        self.ppu_read(0x2000 | (self.registers.vram_addr.get_bits() & 0x0FFF));
-                }
-
-                if self.scanline == -1 && self.cycles >= 280 && self.cycles < 305 {
-                    // End of vertical blank period so reset the Y address ready for rendering
-                    self.transfer_address_y();
-                }
-
-                if self.cycles == 257 && self.scanline >= 0 {
-                    self.sprite_scanline = vec![];
-
-                    let mut sprite_count = 0;
-                    self.sprite_zero_hit_possible = false;
-                    for (index, oam) in Oam::oam_iter(&self.oam_data).enumerate() {
-                        if sprite_count >= 9 {
-                            break;
+                        if self.registers.vram_addr.get_coarse_y() & 0x02 > 0 {
+                            self.bg_next_tile_attrib >>= 4;
                         }
-
-                        let diff = self.scanline - (oam.tile_y as i16);
-
-                        if diff >= 0 && diff < self.registers.control.sprite_size() as i16 {
-                            if self.sprite_scanline.len() < 8 {
-                                // sprite zero
-                                if index == 0 {
-                                    self.sprite_zero_hit_possible = true;
-                                }
-
-                                self.sprite_scanline.push(oam.clone());
-                                sprite_count += 1;
-                            }
+                        if self.registers.vram_addr.get_coarse_x() & 0x02 > 0 {
+                            self.bg_next_tile_attrib >>= 2;
                         }
+                        self.bg_next_tile_attrib &= 0x03;
                     }
-
-                    self.registers.status.set_sprite_overflow(sprite_count > 8);
-                }
-
-                if self.cycles == 340 {
-                    for (index, oam) in self.sprite_scanline.iter().enumerate() {
-                        // god what a mess..........
-                        let addr_lo = if !self
+                    4 => {
+                        let mut addr = ((if self
                             .registers
                             .control
-                            .contains(ControlRegister::SPRITE_SIZE)
+                            .contains(ControlRegister::BACKGROUND_PATTERN_ADDR)
                         {
-                            // 8x8 mode
-                            if !oam.flip_vertical() {
-                                // normal
-                                self.registers.control.sprite_pattern_table_address()
+                            1
+                        } else {
+                            0
+                        }) as u16)
+                            << 12;
+                        addr += ((self.bg_next_tile_id as u16) << 4) as u16;
+                        addr += (self.registers.vram_addr.get_fine_y());
+                        self.bg_next_tile_lsb = self.ppu_read(addr);
+                    }
+                    6 => {
+                        let mut addr = if self
+                            .registers
+                            .control
+                            .contains(ControlRegister::BACKGROUND_PATTERN_ADDR)
+                        {
+                            1
+                        } else {
+                            0
+                        } << 12;
+                        addr += ((self.bg_next_tile_id as u16) << 4) as u16;
+                        addr += (self.registers.vram_addr.get_fine_y() + 8);
+                        self.bg_next_tile_msb = self.ppu_read(addr);
+                    }
+                    7 => {
+                        self.increment_scroll_x();
+                    }
+                    _ => {}
+                }
+            }
+
+            if self.cycles == 256 {
+                self.increment_scroll_y()
+            }
+
+            if self.cycles == 257 {
+                self.load_background_shifters();
+                self.transfer_address_x();
+            }
+
+            if self.cycles == 338 || self.cycles == 340 {
+                self.bg_next_tile_id =
+                    self.ppu_read(0x2000 | (self.registers.vram_addr.get_bits() & 0x0FFF));
+            }
+
+            if self.scanline == -1 && self.cycles >= 280 && self.cycles < 305 {
+                // End of vertical blank period so reset the Y address ready for rendering
+                self.transfer_address_y();
+            }
+
+            if self.cycles == 257 && self.scanline >= 0 {
+                self.sprite_scanline = vec![];
+
+                let mut sprite_count = 0;
+                self.sprite_zero_hit_possible = false;
+                for (index, oam) in Oam::oam_iter(&self.oam_data).enumerate() {
+                    if sprite_count >= 9 {
+                        break;
+                    }
+
+                    let diff = self.scanline - (oam.tile_y as i16);
+
+                    if diff >= 0 && diff < self.registers.control.sprite_size() as i16 {
+                        if self.sprite_scanline.len() < 8 {
+                            // sprite zero
+                            if index == 0 {
+                                self.sprite_zero_hit_possible = true;
+                            }
+
+                            self.sprite_scanline.push(oam.clone());
+                            sprite_count += 1;
+                        }
+                    }
+                }
+
+                self.registers.status.set_sprite_overflow(sprite_count > 8);
+            }
+
+            if self.cycles == 340 {
+                for (index, oam) in self.sprite_scanline.iter().enumerate() {
+                    // god what a mess..........
+                    let addr_lo = if !self
+                        .registers
+                        .control
+                        .contains(ControlRegister::SPRITE_SIZE)
+                    {
+                        // 8x8 mode
+                        if !oam.flip_vertical() {
+                            // normal
+                            self.registers.control.sprite_pattern_table_address()
                                     | (oam.tile_index << 4) // which cell
                                     | (self.scanline as u16 - oam.tile_y as u16)
-                            /* which row in cell */
+                        /* which row in cell */
+                        } else {
+                            // flipped vertically
+                            self.registers.control.sprite_pattern_table_address()
+                                | (oam.tile_index << 4)
+                                | (7 - (self.scanline as u16 - oam.tile_y as u16) & 0x07)
+                        }
+                    } else {
+                        // 8x16 mode
+                        if !oam.flip_vertical() {
+                            if self.scanline as usize - oam.tile_y < 8 {
+                                self.registers.control.sprite_pattern_table_address()
+                                    | (oam.tile_index << 4)
+                                    | ((self.scanline as u16 - oam.tile_y as u16) & 0x07)
                             } else {
-                                // flipped vertically
+                                self.registers.control.sprite_pattern_table_address()
+                                    | (((oam.tile_index & 0xFE) + 1) << 4)
+                                    | ((self.scanline as u16 - oam.tile_y as u16) & 0x07)
+                            }
+                        } else {
+                            if self.scanline as usize - oam.tile_y < 8 {
+                                self.registers.control.sprite_pattern_table_address()
+                                    | (((oam.tile_index & 0xFE) + 1) << 4)
+                                    | (7 - (self.scanline as u16 - oam.tile_y as u16) & 0x07)
+                            } else {
                                 self.registers.control.sprite_pattern_table_address()
                                     | (oam.tile_index << 4)
                                     | (7 - (self.scanline as u16 - oam.tile_y as u16) & 0x07)
                             }
-                        } else {
-                            // 8x16 mode
-                            if !oam.flip_vertical() {
-                                if self.scanline as usize - oam.tile_y < 8 {
-                                    self.registers.control.sprite_pattern_table_address()
-                                        | (oam.tile_index << 4)
-                                        | ((self.scanline as u16 - oam.tile_y as u16) & 0x07)
-                                } else {
-                                    self.registers.control.sprite_pattern_table_address()
-                                        | (((oam.tile_index & 0xFE) + 1) << 4)
-                                        | ((self.scanline as u16 - oam.tile_y as u16) & 0x07)
-                                }
-                            } else {
-                                if self.scanline as usize - oam.tile_y < 8 {
-                                    self.registers.control.sprite_pattern_table_address()
-                                        | (((oam.tile_index & 0xFE) + 1) << 4)
-                                        | (7 - (self.scanline as u16 - oam.tile_y as u16) & 0x07)
-                                } else {
-                                    self.registers.control.sprite_pattern_table_address()
-                                        | (oam.tile_index << 4)
-                                        | (7 - (self.scanline as u16 - oam.tile_y as u16) & 0x07)
-                                }
-                            }
-                        };
+                        }
+                    };
 
-                        let addr_hi = addr_lo + 8;
+                    let addr_hi = addr_lo + 8;
 
-                        let mut bits_lo = self.ppu_read(addr_lo);
-                        let mut bits_hi = self.ppu_read(addr_hi);
+                    let mut bits_lo = self.ppu_read(addr_lo);
+                    let mut bits_hi = self.ppu_read(addr_hi);
 
-                        if oam.flip_horizontal() {
-                            fn flipbyte(input: u8) -> u8 {
-                                let mut b = (input & 0xF0) >> 4 | (input & 0x0F) << 4;
-                                b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
-                                b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
-                                b
-                            }
-
-                            bits_lo = flipbyte(bits_lo);
-                            bits_hi = flipbyte(bits_hi);
+                    if oam.flip_horizontal() {
+                        fn flipbyte(input: u8) -> u8 {
+                            let mut b = (input & 0xF0) >> 4 | (input & 0x0F) << 4;
+                            b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
+                            b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
+                            b
                         }
 
-                        self.sprite_shifter_pattern_lo[index] = bits_lo;
-                        self.sprite_shifter_pattern_hi[index] = bits_hi;
+                        bits_lo = flipbyte(bits_lo);
+                        bits_hi = flipbyte(bits_hi);
                     }
+
+                    self.sprite_shifter_pattern_lo[index] = bits_lo;
+                    self.sprite_shifter_pattern_hi[index] = bits_hi;
                 }
             }
+        }
 
-            if self.scanline == 240 {
-                // Post render scanline - do nothing
-            }
+        if self.scanline == 240 {
+            // Post render scanline - do nothing
+        }
 
-            if self.scanline >= 241 && self.scanline < 261 {
-                if self.scanline == 241 && self.cycles == 1 {
-                    self.registers.status.set_vblank_status(true);
+        if self.scanline >= 241 && self.scanline < 261 {
+            if self.scanline == 241 && self.cycles == 1 {
+                self.registers.status.set_vblank_status(true);
 
-                    if self.registers.control.generate_vblank_nmi() {
-                        self.nmi_interrupt = Some(1);
-                        frame_complete = true
-                    }
+                if self.registers.control.generate_vblank_nmi() {
+                    self.nmi_interrupt = Some(1);
+                    frame_complete = true
                 }
             }
+        }
 
-            let mut bg_pixel: u8 = 0x00;
-            let mut bg_palette: u8 = 0x00;
+        let mut bg_pixel: u8 = 0x00;
+        let mut bg_palette: u8 = 0x00;
 
-            if self.registers.mask.show_background() {
-                let bit_mux = 0x8000 >> self.fine_x;
+        if self.registers.mask.show_background() {
+            let bit_mux = 0x8000 >> self.fine_x;
 
-                let p0_pixel: u8 = (self.bg_shifter_pattern_lo & bit_mux > 0) as u8;
-                let p1_pixel: u8 = (self.bg_shifter_pattern_hi & bit_mux > 0) as u8;
+            let p0_pixel: u8 = (self.bg_shifter_pattern_lo & bit_mux > 0) as u8;
+            let p1_pixel: u8 = (self.bg_shifter_pattern_hi & bit_mux > 0) as u8;
 
-                bg_pixel = (p1_pixel << 1) | p0_pixel;
+            bg_pixel = (p1_pixel << 1) | p0_pixel;
 
-                let bg_pal0: u8 = (self.bg_shifter_attrib_lo & bit_mux > 0) as u8;
-                let bg_pal1: u8 = (self.bg_shifter_attrib_hi & bit_mux > 0) as u8;
+            let bg_pal0: u8 = (self.bg_shifter_attrib_lo & bit_mux > 0) as u8;
+            let bg_pal1: u8 = (self.bg_shifter_attrib_hi & bit_mux > 0) as u8;
 
-                bg_palette = (bg_pal1 << 1) | bg_pal0;
-            }
+            bg_palette = (bg_pal1 << 1) | bg_pal0;
+        }
 
-            let mut fg_pixel = 0u8;
-            let mut fg_palette = 0u8;
-            let mut fg_priority = false;
+        let mut fg_pixel = 0u8;
+        let mut fg_palette = 0u8;
+        let mut fg_priority = false;
 
-            if self.registers.mask.show_sprites() {
-                self.sprite_zero_being_rendered = false;
+        if self.registers.mask.show_sprites() {
+            self.sprite_zero_being_rendered = false;
 
-                for (index, oam) in self.sprite_scanline.iter().enumerate() {
-                    if oam.tile_x == 0 {
-                        let fg_pixel_lo = (self.sprite_shifter_pattern_lo[index] & 0x80) >> 7;
-                        let fg_pixel_hi = (self.sprite_shifter_pattern_hi[index] & 0x80) >> 7;
-                        fg_pixel = (fg_pixel_hi << 1) | fg_pixel_lo;
+            for (index, oam) in self.sprite_scanline.iter().enumerate() {
+                if oam.tile_x == 0 {
+                    let fg_pixel_lo = (self.sprite_shifter_pattern_lo[index] & 0x80) >> 7;
+                    let fg_pixel_hi = (self.sprite_shifter_pattern_hi[index] & 0x80) >> 7;
+                    fg_pixel = (fg_pixel_hi << 1) | fg_pixel_lo;
 
-                        fg_palette = oam.palette_index() + 0x04;
-                        fg_priority = oam.priority_in_front_of_background();
+                    fg_palette = oam.palette_index() + 0x04;
+                    fg_priority = oam.priority_in_front_of_background();
 
-                        // non transparent pixel
-                        if fg_pixel != 0 {
-                            if index != 0 {
-                                self.sprite_zero_being_rendered = true;
-                            }
-
-                            break;
+                    // non transparent pixel
+                    if fg_pixel != 0 {
+                        if index != 0 {
+                            self.sprite_zero_being_rendered = true;
                         }
+
+                        break;
                     }
                 }
             }
+        }
 
-            let (pixel, palette) = if bg_pixel == 0 && fg_pixel == 0 {
-                (0x00, 0x00)
-            } else if bg_pixel == 0 && fg_pixel > 0 {
+        let (pixel, palette) = if bg_pixel == 0 && fg_pixel == 0 {
+            (0x00, 0x00)
+        } else if bg_pixel == 0 && fg_pixel > 0 {
+            (fg_pixel, fg_palette)
+        } else if bg_pixel > 0 && fg_pixel == 0 {
+            (bg_pixel, bg_palette)
+        } else {
+            let (pixel, palette) = if fg_priority {
                 (fg_pixel, fg_palette)
-            } else if bg_pixel > 0 && fg_pixel == 0 {
-                (bg_pixel, bg_palette)
             } else {
-                let (pixel, palette) = if fg_priority {
-                    (fg_pixel, fg_palette)
-                } else {
-                    (bg_pixel, bg_palette)
-                };
-
-                if self.sprite_zero_hit_possible && self.sprite_zero_being_rendered {
-                    if self.registers.mask.show_background() && self.registers.mask.show_sprites() {
-                        if !self.registers.mask.leftmost_8pxl_background()
-                            && !self.registers.mask.leftmost_8pxl_sprite()
-                        {
-                            if self.cycles >= 9 && self.cycles < 258 {
-                                self.registers.status.set_sprite_zero_hit(true);
-                            }
-                        } else {
-                            if self.cycles >= 1 && self.cycles < 258 {
-                                self.registers.status.set_sprite_zero_hit(true);
-                            }
-                        }
-                    }
-                }
-
-                (pixel, palette)
+                (bg_pixel, bg_palette)
             };
 
-            let rgb = self.get_color_from_palette_ram(pixel, palette);
-            self.set_pixel(self.cycles.wrapping_sub(1), self.scanline as usize, rgb);
-
-            // Advance renderer
-            self.cycles += 1;
-            if self.cycles >= 341 {
-                self.cycles = 0;
-                self.scanline += 1;
-                if self.scanline >= 261 {
-                    self.frame.fill(0x00);
-                    self.scanline = -1;
-                    frame_complete = true;
+            if self.sprite_zero_hit_possible && self.sprite_zero_being_rendered {
+                if self.registers.mask.show_background() && self.registers.mask.show_sprites() {
+                    if !self.registers.mask.leftmost_8pxl_background()
+                        && !self.registers.mask.leftmost_8pxl_sprite()
+                    {
+                        if self.cycles >= 9 && self.cycles < 258 {
+                            self.registers.status.set_sprite_zero_hit(true);
+                        }
+                    } else {
+                        if self.cycles >= 1 && self.cycles < 258 {
+                            self.registers.status.set_sprite_zero_hit(true);
+                        }
+                    }
                 }
+            }
+
+            (pixel, palette)
+        };
+
+        let rgb = self.get_color_from_palette_ram(pixel, palette);
+        self.set_pixel(self.cycles.wrapping_sub(1), self.scanline as usize, rgb);
+
+        // Advance renderer
+        self.cycles += 1;
+        if self.cycles >= 341 {
+            self.cycles = 0;
+            self.scanline += 1;
+            if self.scanline >= 261 {
+                self.frame.fill(0x00);
+                self.scanline = -1;
+                frame_complete = true;
             }
         }
 

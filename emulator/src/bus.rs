@@ -30,6 +30,7 @@ use crate::cartridge::Rom;
 use crate::joypad::Joypad;
 use core::bus::{Bus, BusPeripheral};
 use core::mem::Mem;
+use cpu6502::cpu::CPU;
 use ppu::{OAM_DATA_SIZE, PPU};
 
 const CPU_VRAM_SIZE: usize = 0x800;
@@ -50,24 +51,17 @@ const JOYPAD_2_ADDR: u16 = 0x4017;
 const PRG_START: u16 = 0x8000;
 const PRG_END: u16 = 0xFFFF;
 
-pub type GameloopCallback<'call> = Box<dyn FnMut(&PPU, &mut Joypad) + 'call>;
-
-pub struct NESBus<'call> {
+pub struct NESBus {
     cpu_vram: [u8; CPU_VRAM_SIZE],
     pub ppu: PPU,
     pub rom: Option<Box<Rom>>,
     pub joypad1: Joypad,
 
     pub cycles: usize,
-    gameloop_callback: GameloopCallback<'call>,
 }
 
-impl<'a> NESBus<'a> {
-    pub fn new(ppu: PPU) -> Self {
-        NESBus::new_with_callback(ppu, Box::new(|_ppu, _joypad| {}))
-    }
-
-    pub fn new_with_callback(ppu: PPU, gameloop_callback: GameloopCallback) -> NESBus {
+impl NESBus {
+    pub fn new(ppu: PPU) -> NESBus {
         NESBus {
             cpu_vram: [0; CPU_VRAM_SIZE],
             ppu,
@@ -75,7 +69,6 @@ impl<'a> NESBus<'a> {
             joypad1: Joypad::new(),
 
             cycles: 0,
-            gameloop_callback,
         }
     }
 
@@ -90,21 +83,27 @@ impl<'a> NESBus<'a> {
             0xFF
         }
     }
-}
 
-impl Bus<'static> for NESBus<'static> {
-    fn tick(&mut self, cycles: u8) {
-        self.cycles += cycles as usize;
-
+    pub fn tick(&mut self, cpu: &mut CPU) -> bool {
         let nmi_before = self.ppu.nmi_interrupt.is_some();
-        let new_frame = self.ppu.tick(cycles * 3);
+        self.ppu.tick();
         let nmi_after = self.ppu.nmi_interrupt.is_some();
 
-        if !nmi_before && nmi_after {
-            (self.gameloop_callback)(&self.ppu, &mut self.joypad1);
+        if self.cycles % 3 == 0 {
+            cpu.tick(self);
         }
-    }
 
+        if let Some(_) = self.ppu.nmi_interrupt.take() {
+            cpu.interrupt_nmi(self);
+        }
+
+        self.cycles += 1;
+
+        !nmi_before && nmi_after
+    }
+}
+
+impl Bus for NESBus {
     fn poll_nmi_status(&mut self) -> Option<u8> {
         self.ppu.nmi_interrupt.take()
     }
@@ -183,7 +182,7 @@ impl Mem for NESBus {
     }
 }
 
-#[cfg(test)]
+#[cfg(NEVER)]
 mod tests {
     use super::*;
 

@@ -8,8 +8,7 @@ pub enum BusPeripheral {
     Apu,
 }
 
-pub trait Bus<'a>: Mem {
-    fn tick(&mut self, cycles: u8);
+pub trait Bus: Mem {
     fn poll_nmi_status(&mut self) -> Option<u8>;
     fn get_clock_cycles_for_peripheral(&self, peripheral: BusPeripheral) -> usize;
 }

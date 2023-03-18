@@ -47,41 +47,55 @@ fn main() {
     let render_thread =
         thread::spawn(move || create_render_thread(rx_frame, tx_joycon, bank_for_render));
 
-    let ppu = PPU::new(rom.chr_rom.clone(), rom.screen_mirroring);
-    let mut bus = NESBus::new_with_callback(
-        ppu,
-        Box::new(move |ppu, joypad| {
-            let mut game_frame = Frame::new();
-            game_frame.data = ppu.frame.to_vec();
-
-            let mut nt1_frame = Frame::new();
-            let viewport = Rectangle::new(0, 0, Frame::WIDTH, Frame::HEIGHT);
-            render::render_name_table(ppu, &mut nt1_frame, &ppu.vram[0..0x400], viewport, 0, 0);
-
-            let mut nt2_frame = Frame::new();
-            let viewport = Rectangle::new(0, 0, Frame::WIDTH, Frame::HEIGHT);
-            render::render_name_table(ppu, &mut nt2_frame, &ppu.vram[0x400..0x800], viewport, 0, 0);
-
-            let chr_frame = {
-                let guard = bank.read().unwrap();
-                render::debug::show_tiles(ppu.chr_rom.as_slice(), *guard)
-            };
-
-            tx_frame
-                .send(vec![game_frame, nt1_frame, nt2_frame, chr_frame])
-                .expect("Should send frames");
-
-            for key_event in rx_joycon.recv().expect("Should receive joycon state") {
-                update_joypad_state(joypad, key_event);
-            }
-        }),
-    );
+    let mut cpu = CPU::new();
+    let mut bus = NESBus::new(PPU::new(rom.chr_rom.clone(), rom.screen_mirroring));
     bus.rom = Some(Box::from(rom));
 
-    let mut cpu = CPU::new(Box::from(bus));
-    cpu.reset();
-    cpu.run();
+    cpu.reset(&mut bus);
 
+    while !&cpu.complete {
+        if !bus.tick(&mut cpu) {
+            continue;
+        }
+
+        let mut game_frame = Frame::new();
+        game_frame.data = bus.ppu.frame.to_vec();
+
+        let mut nt1_frame = Frame::new();
+        let viewport = Rectangle::new(0, 0, Frame::WIDTH, Frame::HEIGHT);
+        render::render_name_table(
+            &bus.ppu,
+            &mut nt1_frame,
+            &bus.ppu.vram[0..0x400],
+            viewport,
+            0,
+            0,
+        );
+
+        let mut nt2_frame = Frame::new();
+        let viewport = Rectangle::new(0, 0, Frame::WIDTH, Frame::HEIGHT);
+        render::render_name_table(
+            &bus.ppu,
+            &mut nt2_frame,
+            &bus.ppu.vram[0x400..0x800],
+            viewport,
+            0,
+            0,
+        );
+
+        let chr_frame = {
+            let guard = bank.read().unwrap();
+            render::debug::show_tiles(&bus.ppu.chr_rom.as_slice(), *guard)
+        };
+
+        tx_frame
+            .send(vec![game_frame, nt1_frame, nt2_frame, chr_frame])
+            .expect("Should send frames");
+
+        for key_event in rx_joycon.recv().expect("Should receive joycon state") {
+            update_joypad_state(&mut bus.joypad1, key_event);
+        }
+    }
     render_thread
         .join()
         .expect("Should be able to attach to the render thread");
