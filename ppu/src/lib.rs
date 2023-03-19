@@ -33,6 +33,9 @@ pub struct PPU {
     pub scanline: u16,
     pub cycles: usize,
     pub nmi_interrupt: Option<u8>,
+
+    scanline_zero_handled: bool,
+    pub sprite_zero_hit: Option<(u8, u8)>,
 }
 
 impl PPU {
@@ -54,13 +57,24 @@ impl PPU {
             scanline: 0,
             cycles: 0,
             nmi_interrupt: None,
+
+            scanline_zero_handled: false,
+            sprite_zero_hit: None,
         }
     }
 
     pub fn tick(&mut self, cycles: u8) -> bool {
         self.cycles += cycles as usize;
+
+        if self.scanline == 0 && !self.scanline_zero_handled {
+            self.sprite_zero_hit = None;
+            self.scanline_zero_handled = true;
+        }
+
         if self.cycles >= 341 {
             if self.is_sprite_zero_hit(self.cycles) {
+                self.registers.scroll_before_sprite_zero = self.registers.scroll;
+                self.sprite_zero_hit = Some((self.oam_data[3], self.oam_data[0]));
                 self.registers.status.set_sprite_zero_hit(true);
             }
 
@@ -79,9 +93,9 @@ impl PPU {
             if self.scanline >= 262 {
                 self.scanline = 0;
                 self.nmi_interrupt = None;
+                self.scanline_zero_handled = false;
                 self.registers.status.set_sprite_zero_hit(false);
                 self.registers.status.reset_vblank_status();
-                // self.registers.control = ControlRegister::new();
             }
         }
 
@@ -248,7 +262,15 @@ impl Mem for PPU {
             RegisterField::Mask => self.registers.mask.update(value),
             RegisterField::OAMAddress => self.write_to_oam_address(value),
             RegisterField::OAMData => self.write_to_oam_data(value),
-            RegisterField::Scroll => self.registers.scroll.write(value),
+            RegisterField::Scroll => {
+                self.registers.scroll.write(value);
+
+                if let Some(_) = self.sprite_zero_hit {
+                    if !self.registers.scroll.latch {
+                        self.sprite_zero_hit = Some((self.cycles as u8, self.scanline as u8))
+                    }
+                }
+            }
             RegisterField::Address => self.write_to_ppu_address(value),
             RegisterField::Data => self.write_to_data(value),
             _ => panic!("Unexpected write on {:#?}", register),

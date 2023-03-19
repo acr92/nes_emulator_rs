@@ -79,6 +79,8 @@ pub struct Registers {
     pub oam_address: u8,
     pub scroll: ScrollRegister,
     pub address: AddressRegister,
+
+    pub scroll_before_sprite_zero: ScrollRegister,
 }
 
 impl Registers {
@@ -90,6 +92,8 @@ impl Registers {
             oam_address: 0,
             scroll: ScrollRegister::new(),
             address: AddressRegister::new(),
+
+            scroll_before_sprite_zero: ScrollRegister::new(),
         }
     }
 }

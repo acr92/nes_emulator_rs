@@ -53,6 +53,7 @@ pub fn render(ppu: &PPU, frame: &mut Frame) {
         -(scroll_x as isize),
         -(scroll_y as isize),
     );
+
     if scroll_x > 0 {
         render_name_table(
             ppu,
@@ -70,6 +71,24 @@ pub fn render(ppu: &PPU, frame: &mut Frame) {
             Rectangle::new(0, 0, 256, scroll_y),
             0,
             (240 - scroll_y) as isize,
+        );
+    }
+
+    if let Some((_, y)) = ppu.sprite_zero_hit {
+        let scroll_x_before = (ppu.registers.scroll_before_sprite_zero.scroll_x) as usize;
+        let scroll_y_before = (ppu.registers.scroll_before_sprite_zero.scroll_y) as usize;
+
+        // This is a hack, we round the rendering to the nearest full name table tile.
+        // Probably won't work for every game, but works for Super Mario Bros
+        let y2 = (((y + 31) / 32) * 32) as usize;
+
+        render_name_table(
+            ppu,
+            frame,
+            &ppu.vram[0..0x400],
+            Rectangle::new(scroll_x_before, scroll_y_before, 256, y2),
+            -(scroll_x_before as isize),
+            -(scroll_y_before as isize),
         );
     }
 
