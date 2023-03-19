@@ -10,7 +10,7 @@ mod debug;
 pub mod frame;
 mod oam;
 mod palette;
-pub mod rectangle;
+mod rectangle;
 
 /*
 WARNING This is quite a drastic simplification that limits the types of games it will be
@@ -108,7 +108,7 @@ pub fn render(ppu: &PPU, frame: &mut Frame) {
     }
 }
 
-pub fn render_name_table(
+fn render_name_table(
     ppu: &PPU,
     frame: &mut Frame,
     name_table: &[u8],
